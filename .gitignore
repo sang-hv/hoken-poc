@@ -5,3 +5,6 @@ __pycache__/
 out/
 report/
 retrieval_report.csv
+node_modules/
+web/dist/
+*.tsbuildinfo

@@ -1,0 +1,207 @@
+export type Role = "admin" | "reviewer" | "viewer";
+
+export interface User {
+  id: string;
+  email: string;
+  name: string;
+  role: Role;
+  provider: string;
+  active: boolean;
+  created_at: string;
+  last_login_at: string;
+}
+
+export type DocStatus =
+  | "processing"
+  | "stitching"
+  | "ocr_review"
+  | "ready_for_chunking"
+  | "chunking"
+  | "chunk_review"
+  | "indexing"
+  | "indexed"
+  | "failed";
+
+export interface Doc {
+  id: string;
+  name: string;
+  kind: string;
+  filename: string;
+  book_page_start: number;
+  page_from: number;
+  page_to: number;
+  total_pdf_pages: number;
+  enabled: boolean;
+  status: DocStatus;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+  config_version: number;
+  stats: Record<string, number>;
+}
+
+export type PageStatus = "queued" | "docling" | "routed" | "cu" | "ready" | "review" | "approved" | "failed";
+
+export interface PageScores {
+  parse_score: number | null;
+  layout_score: number | null;
+  ocr_score: number | null;
+  table_score: number | null;
+  mean_score: number | null;
+  low_score: number | null;
+  mean_grade: string;
+  low_grade: string;
+}
+
+export interface PageFeatures {
+  has_text_layer: boolean;
+  n_tables: number;
+  complex_tables: number;
+  table_at_bottom: boolean;
+  table_at_top: boolean;
+  n_figures: number;
+  max_figure_area: number;
+  removed: Record<string, number>;
+}
+
+export interface PageVersion {
+  v: number;
+  source: "stitched" | "human" | "llm";
+  by: string;
+  at: string;
+  note: string;
+}
+
+export interface Page {
+  id: string;
+  doc_id: string;
+  page: number;
+  book_page: number;
+  status: PageStatus;
+  engine: string;
+  scores: PageScores;
+  features: PageFeatures;
+  route: "easy" | "hard" | null;
+  route_reasons: string[];
+  route_override: "auto" | "force_cu" | "skip_cu";
+  cu_status: string;
+  continues_next: boolean;
+  table_continues_next: boolean;
+  current_version: number;
+  versions: PageVersion[];
+  reviewed_by: string;
+  reviewed_at: string;
+  updated_at: string;
+  error: string;
+}
+
+export interface Element {
+  label: string;
+  bbox: [number, number, number, number];
+  class?: string;
+  removed?: boolean;
+  figure?: number;
+}
+
+export interface PageDetail extends Page {
+  markdown: string;
+  sources: Partial<Record<"docling" | "cu" | "stitched", string>>;
+  elements: Element[];
+  image_size: [number, number] | null;
+}
+
+export interface Chunk {
+  id: string;
+  doc_id: string;
+  seq: number;
+  item_code: string;
+  title: string;
+  text: string;
+  page_from: number;
+  page_to: number;
+  confidence: number;
+  rule_score: number;
+  llm_score: number | null;
+  violations: string[];
+  rounds: number;
+  status: "draft" | "approved" | "indexed";
+  edited_by: string;
+  updated_at: string;
+}
+
+export type JobStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled";
+
+export interface Job {
+  id: string;
+  doc_id: string;
+  doc_name?: string;
+  step: string;
+  queue: string;
+  page: number | null;
+  params: Record<string, unknown>;
+  status: JobStatus;
+  attempts: number;
+  max_attempts: number;
+  config_version: number;
+  error: string;
+  created_at: string;
+  started_at: string;
+  finished_at: string;
+  updated_at: string;
+  created_by: string;
+}
+
+export interface JobEvent {
+  id: string;
+  doc_id: string;
+  job_id: string;
+  step: string;
+  page: number | null;
+  level: "debug" | "info" | "warn" | "error";
+  code: string;
+  params: Record<string, unknown>;
+  ts: string;
+}
+
+export interface FieldSpec {
+  name: string;
+  kind: "text" | "secret" | "number" | "select" | "bool" | "textarea";
+  required: boolean;
+  default: unknown;
+  options: string[];
+  show_if: Record<string, unknown>;
+}
+
+export interface AdapterSpec {
+  component: string;
+  type: "local" | "azure" | "aws";
+  service: string;
+  fields: FieldSpec[];
+}
+
+export interface ProviderState {
+  type: string;
+  config: Record<string, unknown>;
+  secrets_set: string[];
+}
+
+export interface ProvidersResponse {
+  version: number;
+  updated_at: string;
+  updated_by: string;
+  components: Record<string, ProviderState>;
+  catalog: Record<string, AdapterSpec[]>;
+}
+
+export interface SearchHit {
+  id: string;
+  doc_id: string;
+  doc_name: string;
+  item_code: string;
+  title: string;
+  page_from: number;
+  page_to: number;
+  content: string;
+  score: number;
+  scores: Record<string, number>;
+}

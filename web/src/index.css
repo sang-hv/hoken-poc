@@ -1,0 +1,140 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --background: oklch(0.985 0.003 247);
+  --foreground: oklch(0.21 0.02 260);
+  --card: oklch(1 0 0);
+  --card-foreground: var(--foreground);
+  --muted: oklch(0.965 0.006 247);
+  --muted-foreground: oklch(0.5 0.02 257);
+  --border: oklch(0.915 0.008 255);
+  --input: oklch(0.89 0.01 255);
+  --primary: oklch(0.52 0.105 183);
+  --primary-foreground: oklch(0.99 0 0);
+  --primary-soft: oklch(0.95 0.035 180);
+  --accent: oklch(0.955 0.012 250);
+  --ring: oklch(0.62 0.11 183);
+  --success: oklch(0.6 0.14 152);
+  --success-soft: oklch(0.95 0.04 152);
+  --warning: oklch(0.72 0.15 70);
+  --warning-soft: oklch(0.96 0.05 85);
+  --danger: oklch(0.58 0.2 25);
+  --danger-soft: oklch(0.95 0.03 25);
+  --info: oklch(0.58 0.14 255);
+  --info-soft: oklch(0.95 0.03 255);
+  --violet: oklch(0.56 0.17 295);
+  --violet-soft: oklch(0.95 0.03 295);
+  --sidebar: oklch(0.975 0.004 247);
+  --shadow: 0 1px 2px rgb(15 23 42 / 0.04), 0 1px 3px rgb(15 23 42 / 0.06);
+}
+
+.dark {
+  --background: oklch(0.17 0.012 260);
+  --foreground: oklch(0.94 0.006 255);
+  --card: oklch(0.205 0.014 260);
+  --card-foreground: var(--foreground);
+  --muted: oklch(0.25 0.014 260);
+  --muted-foreground: oklch(0.7 0.015 257);
+  --border: oklch(0.3 0.015 260);
+  --input: oklch(0.34 0.015 260);
+  --primary: oklch(0.7 0.11 182);
+  --primary-foreground: oklch(0.18 0.02 200);
+  --primary-soft: oklch(0.3 0.05 185);
+  --accent: oklch(0.26 0.016 260);
+  --ring: oklch(0.7 0.11 182);
+  --success: oklch(0.72 0.14 152);
+  --success-soft: oklch(0.3 0.05 152);
+  --warning: oklch(0.8 0.14 80);
+  --warning-soft: oklch(0.32 0.05 80);
+  --danger: oklch(0.7 0.17 25);
+  --danger-soft: oklch(0.32 0.06 25);
+  --info: oklch(0.72 0.12 255);
+  --info-soft: oklch(0.3 0.05 255);
+  --violet: oklch(0.72 0.14 295);
+  --violet-soft: oklch(0.31 0.06 295);
+  --sidebar: oklch(0.19 0.013 260);
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.3);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-soft: var(--primary-soft);
+  --color-accent: var(--accent);
+  --color-ring: var(--ring);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --color-violet: var(--violet);
+  --color-violet-soft: var(--violet-soft);
+  --color-sidebar: var(--sidebar);
+  --font-sans: "Inter", "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic UI", "Meiryo",
+    system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", "SFMono-Regular", ui-monospace, "Cascadia Code", Menlo, Consolas, monospace;
+  --shadow-card: var(--shadow);
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    font-feature-settings: "palt";
+  }
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+}
+
+/* Markdown xem trước */
+.prose-md {
+  line-height: 1.75;
+  font-size: 0.875rem;
+}
+.prose-md h1 { font-size: 1.25rem; font-weight: 700; margin: 1rem 0 0.5rem; }
+.prose-md h2 { font-size: 1.1rem; font-weight: 700; margin: 1rem 0 0.5rem; }
+.prose-md h3, .prose-md h4 { font-size: 1rem; font-weight: 600; margin: 0.75rem 0 0.4rem; }
+.prose-md p { margin: 0.5rem 0; }
+.prose-md ul, .prose-md ol { padding-left: 1.25rem; margin: 0.5rem 0; list-style: disc; }
+.prose-md ol { list-style: decimal; }
+.prose-md table { border-collapse: collapse; margin: 0.75rem 0; font-size: 0.8rem; width: 100%; }
+.prose-md th, .prose-md td { border: 1px solid var(--border); padding: 0.3rem 0.5rem; vertical-align: top; }
+.prose-md th { background: var(--muted); font-weight: 600; }
+.prose-md code { font-family: var(--font-mono); background: var(--muted); padding: 0.05rem 0.3rem; border-radius: 4px; }
+.prose-md pre { background: var(--muted); padding: 0.75rem; border-radius: 8px; overflow: auto; font-size: 0.78rem; }
+.prose-md pre code { background: none; padding: 0; }
+
+.cm-editor { height: 100%; font-size: 13px; }
+.cm-editor.cm-focused { outline: none; }
+.cm-scroller { font-family: var(--font-mono); line-height: 1.6; }
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+.animate-pulse-dot { animation: pulse-dot 1.4s ease-in-out infinite; }

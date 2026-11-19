@@ -157,10 +157,13 @@ def analyze_with_docling(pdf: bytes, page: int, opts: DoclingOptions) -> PageAna
 
 
 def analyze_with_pdfium(pdf: bytes, page: int) -> PageAnalysis:
+    from app.steps.rules import join_wrapped_lines
+
     text = page_text_pdfium(pdf, page)
     lines = [ln.rstrip() for ln in text.replace("\r", "").split("\n")]
     feats = PageFeatures(has_text_layer=len(text.strip()) > 20)
-    return PageAnalysis("pdfium", "\n".join(lines).strip() + "\n", PageScores(), feats, [])
+    md = join_wrapped_lines("\n".join(lines))
+    return PageAnalysis("pdfium", md.strip() + "\n", PageScores(), feats, [])
 
 
 def analyze_page(pdf: bytes, page: int, opts: DoclingOptions) -> PageAnalysis:

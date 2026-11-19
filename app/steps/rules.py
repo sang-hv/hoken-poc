@@ -39,9 +39,38 @@ def decide_route(page: Page, opts: RoutingOptions) -> tuple[str, list[str]]:
     return ("hard" if reasons else "easy"), reasons
 
 
+# ================================================================== nối dòng bị ngắt (fallback pdfium)
+_LINE_START = re.compile(r"^(\d+\s|[0-9０-９]+[.)．）]|注|・|※|[（(]|#|\||[A-Z]\d{3}|ただし|なお)")
+
+
+def join_wrapped_lines(text: str, min_len: int = 25) -> str:
+    """pdfium trả về từng dòng hiển thị; nối các dòng bị ngắt giữa câu (không đụng bảng, mục, ghi chú)."""
+    out: list[str] = []
+    for ln in text.split("\n"):
+        cur = ln.rstrip()
+        if out and cur.strip() and out[-1].strip():
+            prev = out[-1]
+            if (
+                len(prev.strip()) >= min_len
+                and not prev.rstrip().endswith(_SENT_END)
+                and not _LINE_START.match(cur.strip())
+            ):
+                sep = " " if prev[-1:].isascii() and cur.strip()[:1].isascii() else ""
+                out[-1] = prev + sep + cur.strip()
+                continue
+        out.append(cur)
+    return "\n".join(out)
+
+
 # ================================================================== nối trang
 _PAGE_NO = re.compile(r"^[\s\-－—–‐(（]*\d{1,4}[\s\-－—–‐)）]*$")
 _SENT_END = ("。", "．", ".", ":", "：", "」", "）", ")", "】")
+
+
+def _header_candidate(line: str) -> bool:
+    """Header/footer chỉ là dòng ngắn, không phải dòng bảng (dòng tiêu đề bảng lặp lại phải giữ)."""
+    t = line.strip()
+    return bool(t) and not t.startswith("|") and len(t) <= 60
 
 
 def _norm_line(s: str) -> str:
@@ -63,7 +92,7 @@ def stitch_pages(pages: dict[int, str], opts: StitchOptions) -> StitchResult:
     for p in order:
         lines = [ln for ln in split[p] if ln.strip()]
         edge = lines[: opts.header_lines] + lines[-opts.footer_lines :] if lines else []
-        cand.update({_norm_line(ln) for ln in edge})
+        cand.update({_norm_line(ln) for ln in edge if _header_candidate(ln)})
     threshold = max(2, int(len(order) * opts.repeat_ratio + 0.999)) if len(order) >= 3 else 10**9
     repeated = {k for k, n in cand.items() if n >= threshold and k}
 
@@ -75,7 +104,11 @@ def stitch_pages(pages: dict[int, str], opts: StitchOptions) -> StitchResult:
         keep = []
         n_removed = 0
         for i, ln in enumerate(lines):
-            if i in edge_idx and (_norm_line(ln) in repeated or _PAGE_NO.match(ln.strip() or "x")):
+            if (
+                i in edge_idx
+                and _header_candidate(ln)
+                and (_norm_line(ln) in repeated or _PAGE_NO.match(ln.strip() or "x"))
+            ):
                 n_removed += 1
                 continue
             keep.append(ln)
