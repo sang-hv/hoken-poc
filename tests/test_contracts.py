@@ -15,11 +15,43 @@ from app.adapters.memory import HashEmbedder, MemoryQueue, MemorySearch, MemoryS
 from app.ports import IndexDoc
 
 PG = os.environ.get("TEST_DATABASE_URL", "")
+AZURITE = os.environ.get("TEST_AZURITE_CONNECTION_STRING", "")
+
+try:
+    import moto  # noqa: F401
+
+    HAS_MOTO = True
+except ImportError:
+    HAS_MOTO = False
+
+aws_only = pytest.mark.skipif(not HAS_MOTO, reason="moto")
+azurite_only = pytest.mark.skipif(not AZURITE, reason="TEST_AZURITE_CONNECTION_STRING")
+
+
+@pytest.fixture(autouse=True)
+def _aws_mock(request, monkeypatch):
+    """Bật moto cho các tham số aws-*."""
+    if "aws" not in request.node.callspec.id if hasattr(request.node, "callspec") else True:
+        yield
+        return
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "testing")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "testing")
+    from moto import mock_aws
+
+    with mock_aws():
+        yield
 
 
 def _stores():
     yield pytest.param(lambda: MemoryStore(), id="memory")
     yield pytest.param(_pg_store, id="postgres", marks=pytest.mark.skipif(not PG, reason="TEST_DATABASE_URL"))
+    yield pytest.param(_ddb_store, id="aws-dynamodb", marks=aws_only)
+
+
+def _ddb_store():
+    from app.adapters.aws.dynamodb import DynamoStore
+
+    return DynamoStore("hoken-test", "ap-northeast-1")
 
 
 def _pg_store():
@@ -53,6 +85,24 @@ def test_docstore_contract(factory):
 def _queues():
     yield pytest.param(lambda: MemoryQueue(), id="memory")
     yield pytest.param(_pg_queue, id="postgres", marks=pytest.mark.skipif(not PG, reason="TEST_DATABASE_URL"))
+    yield pytest.param(_sqs_queue, id="aws-sqs", marks=aws_only)
+    yield pytest.param(_azure_queue, id="azure-queue", marks=azurite_only)
+
+
+def _sqs_queue():
+    import boto3
+
+    from app.adapters.aws.sqs import SqsQueue
+
+    sqs = boto3.client("sqs", region_name="ap-northeast-1")
+    url = sqs.create_queue(QueueName="hoken-light")["QueueUrl"]
+    return SqsQueue(url[: -len("light")], "ap-northeast-1")
+
+
+def _azure_queue():
+    from app.adapters.azure.storage_queue import AzureStorageQueue
+
+    return AzureStorageQueue("", AZURITE, f"t{uuid.uuid4().hex[:8]}")
 
 
 def _pg_queue():
@@ -67,7 +117,7 @@ def test_queue_contract(factory):
     q.send("light", {"job_id": "1"})
     q.send("light", {"job_id": "2"})
     q.send("light", {"job_id": "3"}, delay_s=60)
-    got = q.receive("light", 5, visibility_s=60)
+    got = sorted(q.receive("light", 5, visibility_s=60), key=lambda m: m.body["job_id"])
     assert [m.body["job_id"] for m in got] == ["1", "2"]
     assert q.receive("light", 5, visibility_s=60) == []  # đang ẩn
     q.ack("light", got[0])
@@ -124,3 +174,91 @@ def test_search_contract(factory):
     s.set_enabled("d1", True)
     s.delete_doc("d1")
     assert s.count() == 0
+
+
+# ------------------------------------------------------------------ blob
+def _blobs(tmp_path_factory=None):
+    from app.adapters.memory import MemoryBlob
+
+    yield pytest.param(lambda tmp: MemoryBlob(), id="memory")
+    yield pytest.param(_fs_blob, id="local-fs")
+    yield pytest.param(_s3_blob, id="aws-s3", marks=aws_only)
+    yield pytest.param(_azure_blob, id="azure-blob", marks=azurite_only)
+
+
+def _fs_blob(tmp):
+    from app.adapters.local.fs_blob import FsBlob
+
+    return FsBlob(str(tmp))
+
+
+def _s3_blob(tmp):
+    import boto3
+
+    from app.adapters.aws.s3 import S3Blob
+
+    boto3.client("s3", region_name="ap-northeast-1").create_bucket(
+        Bucket="hoken-test", CreateBucketConfiguration={"LocationConstraint": "ap-northeast-1"}
+    )
+    return S3Blob("hoken-test", "ap-northeast-1")
+
+
+def _azure_blob(tmp):
+    from app.adapters.azure.blob import AzureBlob
+
+    return AzureBlob("", f"t{uuid.uuid4().hex[:8]}", AZURITE)
+
+
+@pytest.mark.parametrize("factory", list(_blobs()))
+def test_blob_contract(factory, tmp_path):
+    b = factory(tmp_path)
+    b.put("docs/d1/source.pdf", b"%PDF-1", "application/pdf")
+    b.put("docs/d1/pages/0001/image.png", b"png")
+    b.put("docs/d2/source.pdf", b"x")
+    assert b.get("docs/d1/source.pdf") == b"%PDF-1"
+    assert b.exists("docs/d1/pages/0001/image.png") and not b.exists("docs/d1/nope")
+    with pytest.raises(FileNotFoundError):
+        b.get("docs/d1/nope")
+    b.delete_prefix("docs/d1")
+    assert not b.exists("docs/d1/source.pdf") and b.exists("docs/d2/source.pdf")
+
+
+# ------------------------------------------------------------------ secret
+def _secrets():
+    from app.adapters.memory import MemorySecrets
+
+    yield pytest.param(lambda: MemorySecrets(), id="memory")
+    yield pytest.param(_local_secrets, id="local-aesgcm")
+    yield pytest.param(_aws_secrets, id="aws-secrets", marks=aws_only)
+
+
+def _local_secrets():
+    from app.adapters.local.secret_store import LocalSecretStore
+
+    return LocalSecretStore(MemoryStore(), "master-key")
+
+
+def _aws_secrets():
+    from app.adapters.aws.secrets_manager import AwsSecrets
+
+    return AwsSecrets("hoken/", "ap-northeast-1")
+
+
+@pytest.mark.parametrize("factory", list(_secrets()))
+def test_secret_contract(factory):
+    s = factory()
+    assert s.get("hoken-llm-azure-api-key") is None
+    s.set("hoken-llm-azure-api-key", "k1")
+    s.set("hoken-llm-azure-api-key", "k2")
+    assert s.get("hoken-llm-azure-api-key") == "k2"
+    s.delete("hoken-llm-azure-api-key")
+
+
+def test_local_secret_is_encrypted_at_rest():
+    from app.adapters.local.secret_store import LocalSecretStore
+
+    store = MemoryStore()
+    LocalSecretStore(store, "master-key").set("x", "plain-value")
+    raw = store.get("secrets", "_", "x")
+    assert "plain-value" not in str(raw)
+    assert LocalSecretStore(store, "other-key").store is store
