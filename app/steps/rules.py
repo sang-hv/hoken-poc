@@ -40,7 +40,9 @@ def decide_route(page: Page, opts: RoutingOptions) -> tuple[str, list[str]]:
 
 
 # ================================================================== nối dòng bị ngắt (fallback pdfium)
-_LINE_START = re.compile(r"^(\d+\s|[0-9０-９]+[.)．）]|注|・|※|[（(]|#|\||[A-Z]\d{3}|ただし|なお)")
+_LINE_START = re.compile(
+    r"^(\d+\s|[0-9０-９]+[.)．）]|注|・|※|[（(]|#|\||[A-Z]\d{3}|ただし|なお|[-－—–‐]?\s*\d{1,4}\s*[-－—–‐]?$)"
+)
 
 
 def join_wrapped_lines(text: str, min_len: int = 25) -> str:

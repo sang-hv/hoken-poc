@@ -80,6 +80,9 @@ def test_join_wrapped_lines_keeps_list_items_and_tables():
     )
     out = rules.join_wrapped_lines(text).split("\n")
     assert out[0].endswith("算定する。") and out[1] == "2 1以外の場合 1,000点" and out[2] == "| a | b |"
+    # Số trang ở cuối trang không bị nối vào câu chưa kết thúc
+    tail = rules.join_wrapped_lines("その製作に当たっては、支台築造の費用を別に算定することはできないものと\n- 538 -")
+    assert tail.split("\n")[-1] == "- 538 -"
 
 
 def test_validate_spans_rules():
