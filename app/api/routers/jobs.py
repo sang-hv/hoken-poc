@@ -38,7 +38,12 @@ def get_job(job_id: str, c: Container = Depends(container), _: User = Depends(vi
     if not j:
         raise HTTPException(404, {"code": "job_not_found"})
     events = c.repo.recent_events(j.doc_id, 500, job_id=j.id)
-    return {**j.model_dump(mode="json"), "events": [e.model_dump(mode="json") for e in events]}
+    doc = c.repo.get_doc(j.doc_id)
+    return {
+        **j.model_dump(mode="json"),
+        "doc_name": doc.name if doc else "",
+        "events": [e.model_dump(mode="json") for e in events],
+    }
 
 
 @router.post("/jobs/{job_id}/retry")

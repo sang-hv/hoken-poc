@@ -1,0 +1,100 @@
+# Chạy toàn bộ khu A trên máy dev hoặc một VM:
+#   cp .env.example .env    (sửa SECRET_MASTER_KEY, JWT_SECRET)
+#   docker compose up -d --build
+#   mở http://localhost:8080  → màn Setup tạo admin đầu tiên
+#
+# Dev có hot reload cho UI:  docker compose --profile dev up web-dev   (http://localhost:5173)
+# Worker Docling dùng GPU (NVIDIA):  docker compose --profile gpu up -d worker-docling-gpu
+
+x-app: &app
+  build: { context: ., dockerfile: docker/app.Dockerfile, target: base }
+  image: hoken-app:local
+  env_file: .env
+  environment:
+    BLOB_LOCAL_DIR: /data/blob
+    DATABASE_URL: ${DATABASE_URL:-postgresql://hoken:hoken@postgres:5432/hoken}
+  volumes:
+    - blob:/data/blob
+  depends_on:
+    postgres: { condition: service_healthy }
+  restart: unless-stopped
+
+services:
+  postgres:
+    build: docker/postgres
+    image: hoken-postgres:local
+    environment:
+      POSTGRES_USER: hoken
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hoken}
+      POSTGRES_DB: hoken
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hoken -d hoken"]
+      interval: 5s
+      retries: 20
+    restart: unless-stopped
+
+  api:
+    <<: *app
+    command: ["python", "-m", "app.main", "serve", "--port", "8000"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 10s
+      retries: 10
+
+  # Định tuyến, nối trang — nhẹ
+  worker-light:
+    <<: *app
+    command: ["python", "-m", "app.main", "worker", "--queues", "light"]
+
+  # Gọi CU / LLM / embedding — chủ yếu chờ mạng, tăng số replica nếu cần
+  worker-ai:
+    <<: *app
+    command: ["python", "-m", "app.main", "worker", "--queues", "ai"]
+    deploy: { replicas: 2 }
+
+  # Docling CPU — nặng, image riêng (model tải sẵn lúc build)
+  worker-docling:
+    <<: *app
+    build: { context: ., dockerfile: docker/app.Dockerfile, target: docling }
+    image: hoken-docling:local
+    command: ["python", "-m", "app.main", "worker", "--queues", "docling"]
+    deploy:
+      resources:
+        limits: { memory: 6g }
+
+  worker-docling-gpu:
+    <<: *app
+    profiles: ["gpu"]
+    build: { context: ., dockerfile: docker/app.Dockerfile, target: docling }
+    image: hoken-docling:local
+    command: ["python", "-m", "app.main", "worker", "--queues", "docling"]
+    deploy:
+      resources:
+        reservations:
+          devices: [{ driver: nvidia, count: 1, capabilities: [gpu] }]
+
+  web:
+    build: web
+    image: hoken-web:local
+    ports: ["${WEB_PORT:-8080}:80"]
+    depends_on: [api]
+    restart: unless-stopped
+
+  web-dev:
+    profiles: ["dev"]
+    image: node:22-alpine
+    working_dir: /web
+    command: sh -c "npm ci --no-audit --no-fund && npx vite --host 0.0.0.0 --port 5173"
+    environment:
+      API_URL: http://api:8000
+    volumes:
+      - ./web:/web
+      - /web/node_modules
+    ports: ["5173:5173"]
+    depends_on: [api]
+
+volumes:
+  pgdata:
+  blob:

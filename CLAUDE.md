@@ -1,37 +1,59 @@
 # 保険AI Bot — PoC (DEHA × Stransa)
 
-Bot hỏi đáp về 点数 nha khoa (保険), sẽ tích hợp vào Apotool. Repo này là PoC.
-Kiến trúc: `docs/HokenAIBot_Architecture_v3.png`. Kế hoạch và việc cần làm: `docs/PLAN.md`.
+Bot hỏi đáp về 点数 nha khoa (保険), sẽ tích hợp vào Apotool.
+Kiến trúc gốc: `docs/HokenAIBot_Architecture_v3.png`. Kiến trúc khu A đã triển khai: `docs/ARCHITECTURE.md`.
+Kế hoạch: `docs/PLAN.md`. **Làm xong khu A (nạp tài liệu) rồi mới làm khu B (hỏi đáp).**
 
-## Ràng buộc bắt buộc (không được vi phạm)
-- **Mọi lời gọi LLM và AI đi tới Azure Japan East, deployment kiểu Standard (regional).**
-  Không dùng Global Standard / Data Zone. Không gọi OpenAI, Anthropic hay dịch vụ nào khác để xử lý tài liệu.
-- Phương án dự phòng duy nhất: Amazon Bedrock với inference profile `jp.` (Tokyo/Osaka). Chỉ dùng khi team yêu cầu.
-- Repo và cloud session **chỉ chứa tài liệu công khai của MHLW** (厚労省). Không commit dữ liệu bệnh nhân,
-  dữ liệu khách hàng hay câu hỏi khách gửi nếu chưa được duyệt.
-- Không commit key hay endpoint thật. Cấu hình đọc từ biến môi trường (xem `.env.example`).
-  Trong cloud session, key do network secret của environment gắn vào request, code không tự đọc key.
-- Log không chép nội dung tài liệu: chỉ ghi docId, trang, mã mục, lý do.
+Skill của repo (đọc trước khi sửa): `.claude/skills/architecture`, `.claude/skills/backend`, `.claude/skills/frontend`.
 
-## Phạm vi tài liệu
-- 赤本 (R8) P536–691, 緑本 (R8) P372–423. Sách R8 chưa phát hành nên dùng tài liệu MHLW tương ứng.
-- Câu trả lời phải kèm căn cứ: tên tài liệu, trang, mã mục.
+## Nguyên tắc
+- **Prod**: mọi dữ liệu lưu và xử lý tại Nhật — Azure Japan East, deployment Standard (không Global / Data Zone);
+  dự phòng Bedrock profile `jp.`. **Dev** được linh hoạt, miễn là dùng dịch vụ Content Understanding (Azure) và LLM.
+- **Content Understanding luôn là Azure**, kể cả khi phần hạ tầng còn lại chạy Local hoặc AWS.
+- **Mọi trang OCR và mọi chunk đều phải qua người review** (sửa trực tiếp rồi Submit), dù confidence cao hay thấp.
+  Confidence chỉ để sắp xếp/tô màu.
+- Câu chatbot không trả lời được thì chuyển bộ phận CSKH (khu B).
+- Repo chỉ chứa tài liệu công khai của MHLW. Không commit dữ liệu bệnh nhân, dữ liệu khách hay câu hỏi khách.
+- Không commit key hay endpoint thật. Log và live log chỉ ghi mã + id/trang/mã mục/lý do, không chép nội dung tài liệu.
+- Giao diện có **tiếng Anh và tiếng Nhật** — mọi chữ mới phải có ở cả `web/src/i18n/en.ts` và `ja.ts`.
 
-## Pipeline (khu A)
-1. Docling (CPU): layout, bảng, OCR; bỏ logo, con dấu, chữ ký.
-2. Định tuyến theo grade trang + luật cứng: scan, bảng phức tạp, hình → bước 3.
-3. Content Understanding (prebuilt-layout + figure analysis), GPT-5.x vision → nối trang → người review.
-4. Cắt thô theo mã mục → LLM chunk ↔ kiểm tra luật (≤ 20 vòng) → confidence → người review → embedding → AI Search.
+## Cấu hình — 4 lớp
+1. **Hạ tầng lõi** (DB, blob, queue, secret backend, JWT): biến môi trường / IaC do DevOps đặt (`.env.example`).
+   Secret gốc nằm ở Key Vault / Secrets Manager; Admin UI chỉ xem.
+2. **Dịch vụ AI & tích hợp** (LLM, embedding, CU, search, SSO Google/Entra): Admin chọn Local / Azure / AWS trên UI.
+   Prod không có lựa chọn Local.
+3. **Secret** của lớp 2: ghi vào SecretStore, DB chỉ giữ cờ "đã đặt"; ưu tiên Managed Identity / IAM role.
+4. **Tuỳ chọn pipeline**: lưu DB có phiên bản; mỗi job ghi phiên bản đã dùng.
+
+| Thành phần | Local (dev) | Azure | AWS |
+|---|---|---|---|
+| DB | Postgres | Cosmos DB | DynamoDB |
+| Blob / Queue | thư mục / bảng Postgres | Blob / Storage Queue | S3 / SQS |
+| Search hybrid | Postgres + pgvector + pg_bigm | AI Search | OpenSearch |
+| LLM / embedding | OpenAI-compatible | Azure OpenAI | Bedrock |
+| CU | Azure | Azure | Azure |
+
+## Pipeline khu A
+Upload → Docling (điểm confidence từng trang) → định tuyến → [CU + vision cho trang khó] → nối trang →
+**review OCR** → cắt thô theo mã mục → LLM chunk ↔ kiểm tra luật (≤ 20 vòng) → confidence → **review chunk** → embedding → index.
+
+Trang **dễ** khi: Docling `low_grade` ≥ GOOD (`low_score ≥ 0.8`), `parse_score ≥ 0.8`, không phải OCR,
+không có bảng gộp ô / bảng tràn trang, không có hình lớn (sau khi bỏ logo, con dấu, chữ ký). Ngưỡng chỉnh trong Admin.
 
 ## Quy ước code
-- Python 3.11, `uv` hoặc `pip`. Format bằng `ruff`. Test bằng `pytest`.
-- `app/steps/*`: logic thuần, mỗi bước có hàm `handle(msg) -> list[next_msg]`.
-  Không giữ trạng thái trong RAM giữa các bước.
-- `app/adapters/*`: queue / blob / db sau interface. `app/runtime/*`: `worker` (VM) và `job` (Container Apps Job).
-- Ghi kết quả theo khoá `docId + page + step`, để chạy lại thì ghi đè, không sinh bản trùng.
-- Mỗi tính năng có lệnh CLI chạy được độc lập (`python -m app.main ...`), để chạy thử không cần UI.
+- Python ≥ 3.11, `uv`/`pip`, format + lint bằng `ruff`, test bằng `pytest`. Frontend: React + Vite + TS + Tailwind v4.
+- `app/steps/*`: handler đăng ký bằng `@register`, nhận `StepCtx`, trả `list[Next]`; logic thuần ở `app/steps/rules.py`.
+- `app/ports`: interface; `app/adapters/{local,azure,aws}`: triển khai; step/service không import SDK cloud.
+- Ghi kết quả theo khoá `docId + page + step`; chạy lại thì ghi đè. Job idempotent theo `docId:step:page`.
+- Mỗi tính năng chạy được bằng CLI: `python -m app.main serve | worker | job | upload | status | create-admin`.
+
+## Chạy
+```bash
+cp .env.example .env && docker compose up -d --build     # http://localhost:8080
+.venv/bin/python -m pytest -q && (cd web && npx tsc -b)
+```
 
 ## Đánh giá
-- OCR: `eval/eval_cer.py` (CER + kiểm tra số 点). Ground truth nằm trong `data/gt/`.
+- OCR: `eval/eval_cer.py` (CER + kiểm tra số 点). Ground truth trong `data/gt/`.
 - Retrieval: `eval/eval_retrieval.py` (Recall@K, MRR theo mã mục).
-- Hỏi đáp: so câu trả lời với đáp án và căn cứ trong bộ câu hỏi; hỏi lại 3 lần để kiểm tra tính ổn định.
+- Hỏi đáp (khu B): so câu trả lời với đáp án và căn cứ; hỏi lại 3 lần để kiểm tra tính ổn định.

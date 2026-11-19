@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import io
 import math
+import os
 import re
 from dataclasses import dataclass, field
 from functools import lru_cache
@@ -54,6 +55,8 @@ def _converter(do_ocr: bool, langs: tuple[str, ...], table_mode: str, classify: 
     from docling.document_converter import DocumentConverter, PdfFormatOption
 
     opts = PdfPipelineOptions()
+    if os.environ.get("DOCLING_ARTIFACTS_PATH"):  # model tải sẵn lúc build image, chạy không cần mạng
+        opts.artifacts_path = os.environ["DOCLING_ARTIFACTS_PATH"]
     opts.do_ocr = do_ocr
     opts.ocr_options = EasyOcrOptions(lang=list(langs))
     opts.do_table_structure = True
