@@ -27,6 +27,7 @@ services:
       POSTGRES_USER: hoken
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hoken}
       POSTGRES_DB: hoken
+    ports: ["${POSTGRES_PORT:-5432}:5432"]  # để chạy app ngoài Docker (scripts/demo/up.sh)
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
