@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
 
@@ -22,14 +22,22 @@ def list_jobs(
     status: str = "",
     step: str = "",
     doc_id: str = "",
-    limit: int = 300,
+    q: str = "",
+    limit: int = Query(300, ge=1, le=2000),
+    offset: int = Query(0, ge=0),
+    paged: bool = False,
     c: Container = Depends(container),
     _: User = Depends(viewer),
 ):
+    """`q` lọc theo tên tài liệu. `paged=true` trả {items, total} để UI phân trang; mặc định trả mảng như cũ."""
     eq = {k: v for k, v in {"status": status, "step": step, "doc_id": doc_id}.items() if v}
-    jobs = c.repo.list_jobs(eq)[:limit]
     names = {d.id: d.name for d in c.repo.list_docs()}
-    return [{**j.model_dump(mode="json"), "doc_name": names.get(j.doc_id, "")} for j in jobs]
+    jobs = c.repo.list_jobs(eq)
+    if q.strip():
+        needle = q.strip().lower()
+        jobs = [j for j in jobs if needle in names.get(j.doc_id, "").lower()]
+    items = [{**j.model_dump(mode="json"), "doc_name": names.get(j.doc_id, "")} for j in jobs[offset : offset + limit]]
+    return {"items": items, "total": len(jobs)} if paged else items
 
 
 @router.get("/jobs/{job_id}")

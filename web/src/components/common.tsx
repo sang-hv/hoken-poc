@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { ApiError } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button, Dialog } from "./ui";
 
 export function PageHeader({
@@ -22,7 +23,7 @@ export function PageHeader({
     <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
       <div className="min-w-0">
         {breadcrumb && <div className="mb-1.5 text-sm text-muted-foreground">{breadcrumb}</div>}
-        <h1 className="truncate text-2xl font-semibold tracking-tight">{title}</h1>
+        <h1 className="break-words text-2xl font-semibold tracking-tight">{title}</h1>
         {subtitle && <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p>}
       </div>
       {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
@@ -144,5 +145,48 @@ export function StatCard({
         {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
       </div>
     </button>
+  );
+}
+
+/** Thanh phân trang: "1–20 / 57" + nút trước/sau. Ẩn khi chỉ có một trang. */
+export function Pagination({
+  page,
+  size,
+  total,
+  onPage,
+  className,
+}: {
+  page: number;
+  size: number;
+  total: number;
+  onPage: (p: number) => void;
+  className?: string;
+}) {
+  const { t } = useTranslation();
+  const pages = Math.max(1, Math.ceil(total / size));
+  if (total <= size) return null;
+  const from = (page - 1) * size + 1;
+  const to = Math.min(total, page * size);
+  return (
+    <div className={cn("flex items-center justify-between gap-3 border-t border-border px-4 py-2.5 text-xs", className)}>
+      <span className="tabular-nums text-muted-foreground">{t("common.range", { from, to, total })}</span>
+      <span className="flex items-center gap-1">
+        <Button variant="ghost" size="iconSm" disabled={page <= 1} onClick={() => onPage(page - 1)} aria-label={t("common.prev")}>
+          <ChevronLeft />
+        </Button>
+        <span className="min-w-14 text-center tabular-nums">
+          {page} / {pages}
+        </span>
+        <Button
+          variant="ghost"
+          size="iconSm"
+          disabled={page >= pages}
+          onClick={() => onPage(page + 1)}
+          aria-label={t("common.next")}
+        >
+          <ChevronRight />
+        </Button>
+      </span>
+    </div>
   );
 }

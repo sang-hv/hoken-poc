@@ -1,16 +1,18 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Trash2, UserPlus } from "lucide-react";
-import { useState } from "react";
+import { Search, Trash2, UserPlus } from "lucide-react";
+import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
-import { ConfirmDialog, PageHeader, useToastError } from "@/components/common";
-import { Badge, Button, Card, Dialog, Field, Input, Select, Skeleton, Switch } from "@/components/ui";
+import { ConfirmDialog, PageHeader, Pagination, useToastError } from "@/components/common";
+import { Badge, Button, Card, Dialog, EmptyState, Field, Input, Select, Skeleton, Switch } from "@/components/ui";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { useClientPage } from "@/lib/hooks";
 import type { Role, User } from "@/lib/types";
 import { fmtRelative } from "@/lib/utils";
 
 const ROLES: Role[] = ["admin", "reviewer", "viewer"];
+const USERS_PAGE = 20;
 
 export function ChangePasswordDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
   const { t } = useTranslation();
@@ -135,6 +137,17 @@ export default function UsersPage() {
   const users = useQuery({ queryKey: ["users"], queryFn: () => api.get<User[]>("/users") });
   const [open, setOpen] = useState(false);
   const [toDelete, setToDelete] = useState<User | null>(null);
+  const [search, setSearch] = useState("");
+  const [role, setRole] = useState("all");
+  const [page, setPage] = useState(1);
+  const list = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    return (users.data ?? []).filter(
+      (u) => (!needle || `${u.name} ${u.email}`.toLowerCase().includes(needle)) && (role === "all" || u.role === role),
+    );
+  }, [users.data, search, role]);
+  const paged = useClientPage(list, page, USERS_PAGE);
+  const filtered = !!search.trim() || role !== "all";
   const patch = async (u: User, body: Partial<User>) => {
     try {
       await api.patch(`/users/${u.id}`, body);
@@ -164,7 +177,31 @@ export default function UsersPage() {
         ))}
       </div>
       <Card>
+        <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-3">
+          <Input
+            type="search"
+            className="w-full sm:max-w-xs sm:flex-1"
+            placeholder={t("users.searchPlaceholder")}
+            aria-label={t("users.searchPlaceholder")}
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(1);
+            }}
+          />
+          <Select
+            className="w-full sm:w-44"
+            aria-label={t("common.role")}
+            value={role}
+            onValueChange={(v) => {
+              setRole(v);
+              setPage(1);
+            }}
+            options={[{ value: "all", label: t("users.allRoles") }, ...ROLES.map((r) => ({ value: r, label: t(`roles.${r}`) }))]}
+          />
+        </div>
         {users.isLoading && <Skeleton className="m-4 h-40" />}
+        {users.data && list.length === 0 && <EmptyState icon={<Search />} title={filtered ? t("common.noMatch") : t("common.empty")} />}
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="text-left text-xs text-muted-foreground">
@@ -178,7 +215,7 @@ export default function UsersPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {users.data?.map((u) => (
+              {paged.items.map((u) => (
                 <tr key={u.id}>
                   <td className="px-4 py-2.5">
                     <p className="font-medium">{u.name || u.email}</p>
@@ -202,7 +239,7 @@ export default function UsersPage() {
                   <td className="px-3 py-2.5 text-muted-foreground">{fmtRelative(u.last_login_at)}</td>
                   <td className="px-3 py-2.5 text-right">
                     {u.id !== me?.id && (
-                      <Button variant="ghost" size="iconSm" onClick={() => setToDelete(u)}>
+                      <Button variant="ghost" size="iconSm" onClick={() => setToDelete(u)} aria-label={t("common.delete")}>
                         <Trash2 className="text-danger" />
                       </Button>
                     )}
@@ -212,6 +249,7 @@ export default function UsersPage() {
             </tbody>
           </table>
         </div>
+        <Pagination page={paged.page} size={USERS_PAGE} total={paged.total} onPage={setPage} />
       </Card>
       <AddUserDialog open={open} onOpenChange={setOpen} />
       <ConfirmDialog

@@ -6,6 +6,7 @@ import {
   FileText,
   Layers,
   ListChecks,
+  Pencil,
   Loader2,
   RefreshCw,
   Route,
@@ -13,12 +14,13 @@ import {
   Sparkles,
   UserCheck,
 } from "lucide-react";
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Link, Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { PageHeader, useToastError } from "@/components/common";
 import { LiveLog } from "@/components/LiveLog";
+import { RenameDialog } from "./Documents";
 import { DocStatusBadge, GradeBadge, JobStatusBadge, PAGE_TONE, PageStatusBadge, RouteBadge } from "@/components/status";
 import {
   Badge,
@@ -27,7 +29,6 @@ import {
   CardContent,
   CardHeader,
   CardTitle,
-  Progress,
   Select,
   Skeleton,
   Tabs,
@@ -40,7 +41,7 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useEventStream } from "@/lib/sse";
 import type { Doc, DocStatus, Job, JobEvent, Page } from "@/lib/types";
-import { cn, fmtDuration, fmtRelative, pct } from "@/lib/utils";
+import { cn, fmtDuration, fmtRelative } from "@/lib/utils";
 
 const ORDER: DocStatus[] = [
   "processing",
@@ -94,6 +95,22 @@ function useSteps(doc: Doc | undefined, pages: Page[] | undefined) {
   }, [doc, pages]);
 }
 
+const STEP_BAR: Record<StepState, string> = {
+  done: "bg-success",
+  running: "bg-info animate-pulse",
+  action: "bg-warning",
+  pending: "bg-muted",
+  failed: "bg-danger",
+};
+const STEP_ICON: Record<StepState, string> = {
+  done: "text-success",
+  running: "text-info",
+  action: "text-warning",
+  pending: "text-muted-foreground",
+  failed: "text-danger",
+};
+
+/** Stepper gọn: ≥1400px một hàng 8 bước, md–1400px 2 hàng × 4; màn hẹp chỉ còn thanh 8 đoạn + bước hiện tại. */
 function Stepper({ steps }: { steps: ReturnType<typeof useSteps> }) {
   const { t } = useTranslation();
   const label: Record<StepState, string> = {
@@ -103,43 +120,56 @@ function Stepper({ steps }: { steps: ReturnType<typeof useSteps> }) {
     action: t("detail.stepAction"),
     failed: t("jobStatus.failed"),
   };
+  const status = (s: (typeof steps)[number]) => `${label[s.state]}${s.meta ? ` · ${s.meta}` : ""}`;
+  const icon = (s: (typeof steps)[number]) =>
+    s.state === "done" ? <Check /> : s.state === "running" ? <Loader2 className="animate-spin" /> : s.icon;
+  let cur = steps.findIndex((s) => s.state === "action" || s.state === "running" || s.state === "failed");
+  if (cur < 0) cur = steps.every((s) => s.state === "done") ? steps.length - 1 : Math.max(0, steps.findIndex((s) => s.state === "pending"));
+  const current = steps[cur];
   return (
-    <ol className="grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-8">
-      {steps.map((s, i) => (
-        <li
-          key={s.key}
-          className={cn(
-            "relative flex flex-col gap-2 rounded-xl border p-3 transition",
-            s.state === "done" && "border-success/30 bg-success-soft/40",
-            s.state === "running" && "border-info/40 bg-info-soft/50",
-            s.state === "action" && "border-warning/50 bg-warning-soft/60 ring-2 ring-warning/20",
-            s.state === "pending" && "border-border bg-card opacity-70",
-          )}
-        >
-          <div className="flex items-center justify-between">
+    <>
+      <ol className="hidden grid-cols-4 gap-x-3 gap-y-4 md:grid min-[1400px]:grid-cols-8 min-[1400px]:gap-x-2">
+        {steps.map((s) => (
+          <li key={s.key} className="flex min-w-0 flex-col gap-1.5" aria-current={s === current ? "step" : undefined}>
+            <span className={cn("h-1.5 rounded-full", STEP_BAR[s.state])} />
             <span
               className={cn(
-                "flex size-7 items-center justify-center rounded-lg [&_svg]:size-4",
-                s.state === "done" && "bg-success text-white",
-                s.state === "running" && "bg-info text-white",
-                s.state === "action" && "bg-warning text-white",
-                s.state === "pending" && "bg-muted text-muted-foreground",
+                "flex min-w-0 items-start gap-1.5 break-words text-xs leading-tight [&_svg]:mt-px [&_svg]:size-3.5 [&_svg]:shrink-0",
+                s.state === "pending" ? "text-muted-foreground" : "font-medium",
+                s.state === "action" && "font-semibold",
               )}
             >
-              {s.state === "done" ? <Check /> : s.state === "running" ? <Loader2 className="animate-spin" /> : s.icon}
+              <span className={STEP_ICON[s.state]}>{icon(s)}</span>
+              <span className="min-w-0">{t(`steps.${s.key}`)}</span>
             </span>
-            <span className="text-[11px] font-mono text-muted-foreground">{i + 1}</span>
+            <span className={cn("text-[11px]", s.state === "action" ? "text-warning" : "text-muted-foreground")}>
+              {status(s)}
+            </span>
+          </li>
+        ))}
+      </ol>
+      {current && (
+        <div className="flex flex-col gap-2 md:hidden">
+          <div className="flex gap-1">
+            {steps.map((s) => (
+              <span key={s.key} className={cn("h-1.5 flex-1 rounded-full", STEP_BAR[s.state])} />
+            ))}
           </div>
-          <div>
-            <p className="text-[13px] font-semibold leading-tight">{t(`steps.${s.key}`)}</p>
-            <p className="mt-0.5 text-[11px] text-muted-foreground">
-              {label[s.state]}
-              {s.meta ? ` · ${s.meta}` : ""}
-            </p>
-          </div>
-        </li>
-      ))}
-    </ol>
+          <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm">
+            <span className="font-mono text-xs text-muted-foreground">
+              {cur + 1}/{steps.length}
+            </span>
+            <span className={cn("flex items-center gap-1.5 font-semibold [&_svg]:size-4", STEP_ICON[current.state])}>
+              {icon(current)}
+              <span className="text-foreground">{t(`steps.${current.key}`)}</span>
+            </span>
+            <span className={cn("text-xs", current.state === "action" ? "text-warning" : "text-muted-foreground")}>
+              {status(current)}
+            </span>
+          </p>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -350,6 +380,7 @@ export default function DocumentDetailPage() {
   const toastError = useToastError();
   const [params, setParams] = useSearchParams();
   const tab = params.get("tab") ?? "overview";
+  const [renaming, setRenaming] = useState(false);
   const doc = useQuery({ queryKey: ["document", docId], queryFn: () => api.get<Doc>(`/documents/${docId}`) });
   const pages = useQuery({ queryKey: ["pages", docId], queryFn: () => api.get<Page[]>(`/documents/${docId}/pages`) });
   const timer = useRef<number | undefined>(undefined);
@@ -387,7 +418,6 @@ export default function DocumentDetailPage() {
     );
   const d = doc.data;
   const total = d.page_to - d.page_from + 1;
-  const approved = d.stats.approved ?? 0;
   const nextReview = pages.data?.find((p) => p.status === "review");
   const failed = d.stats.failed ?? 0;
 
@@ -404,8 +434,20 @@ export default function DocumentDetailPage() {
           </span>
         }
         title={
-          <span className="flex items-center gap-3">
-            {d.name} <DocStatusBadge status={d.status} />
+          <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span className="break-words">{d.name}</span>
+            {can("reviewer") && (
+              <Button
+                variant="ghost"
+                size="iconSm"
+                className="-ml-2 text-muted-foreground"
+                onClick={() => setRenaming(true)}
+                aria-label={t("common.rename")}
+              >
+                <Pencil />
+              </Button>
+            )}
+            <DocStatusBadge status={d.status} />
           </span>
         }
         subtitle={`${t("documents.bookPages", { from: d.book_page_start, to: d.book_page_start + total - 1 })} · PDF p${d.page_from}–${d.page_to} / ${d.total_pdf_pages} · ${t("jobs.configVersion", { v: d.config_version })}`}
@@ -450,11 +492,10 @@ export default function DocumentDetailPage() {
       />
 
       <Card className="mb-6">
-        <CardContent className="flex flex-col gap-4">
+        <CardContent className="flex flex-col gap-3 py-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-sm font-semibold">{t("detail.pipeline")}</p>
             <div className="flex flex-wrap items-center gap-2 text-xs">
-              <Badge tone="success">{t("detail.reviewed", { n: approved, total })}</Badge>
               {(d.stats.hard ?? 0) > 0 && <Badge tone="violet">{t("detail.hardPages", { n: d.stats.hard })}</Badge>}
               {(d.stats.cu_skipped ?? 0) > 0 && (
                 <Badge tone="warning">{t("detail.cuSkipped", { n: d.stats.cu_skipped })}</Badge>
@@ -469,10 +510,10 @@ export default function DocumentDetailPage() {
           {d.status === "ready_for_chunking" && (
             <p className="rounded-lg bg-primary-soft px-3 py-2 text-sm text-primary">{t("detail.allApprovedHint")}</p>
           )}
-          <Progress value={pct(approved, total)} tone={approved === total ? "success" : "primary"} />
         </CardContent>
       </Card>
 
+      <RenameDialog doc={renaming ? d : null} onClose={() => setRenaming(false)} />
       <Tabs value={tab} onValueChange={(v) => setParams({ tab: v }, { replace: true })}>
         <TabsList className="mb-4">
           <TabsTrigger value="overview">
@@ -508,4 +549,14 @@ export default function DocumentDetailPage() {
       </Tabs>
     </>
   );
+}
+
+/** /documents/:docId/review → trang đầu tiên đang chờ review (không còn thì về trang chi tiết). */
+export function NextReviewRedirect() {
+  const { docId = "" } = useParams();
+  const pages = useQuery({ queryKey: ["pages", docId], queryFn: () => api.get<Page[]>(`/documents/${docId}/pages`) });
+  if (pages.isError) return <Navigate to={`/documents/${docId}`} replace />;
+  if (!pages.data) return <Skeleton className="h-80" />;
+  const next = [...pages.data].sort((a, b) => a.page - b.page).find((p) => p.status === "review");
+  return <Navigate to={next ? `/documents/${docId}/pages/${next.page}` : `/documents/${docId}`} replace />;
 }

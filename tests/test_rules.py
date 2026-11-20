@@ -110,3 +110,79 @@ def test_rough_sections_by_item_code():
     secs = rules.rough_sections(lines, ChunkOptions())
     assert [s.item_code for s in secs] == ["", "M015-2", "A000"]
     assert secs[2].title == "初診料"
+
+
+# ------------------------------------------------------------------ vùng confidence thấp
+def _cu_raw(words):
+    return {
+        "result": {
+            "contents": [
+                {"markdown": "## M015 局部 1,250点", "pages": [{"width": 8.0, "height": 10.0, "words": words}]}
+            ]
+        }
+    }
+
+
+def test_parse_cu_source():
+    assert rules.parse_cu_source("D(1,1,2,3,2,3,4,1,4)") == [(1, [1.0, 2.0, 3.0, 2.0, 3.0, 4.0, 1.0, 4.0])]
+    assert rules.parse_cu_source("D(1,1,2,3,2,3,4,1,4);D(2,0,0,1,0,1,1,0,1)")[1][0] == 2
+    assert rules.parse_cu_source("garbage") == [] and rules.parse_cu_source("D(1,a,b)") == []
+
+
+def test_cu_low_words_normalizes_and_filters():
+    words = [
+        {
+            "content": "1,250点",
+            "confidence": 0.61,
+            "source": "D(1,4,2,6,2,6,3,4,3)",
+            "span": {"offset": 12, "length": 6},
+        },
+        {"content": "局部", "confidence": 0.95, "source": "D(1,1,2,2,2,2,3,1,3)"},
+        {"content": "x", "confidence": 0.5, "source": ""},  # không có toạ độ → bỏ
+    ]
+    out = rules.cu_low_words(_cu_raw(words), 0.8)
+    assert len(out) == 1
+    b = out[0]
+    assert b["source"] == "cu" and b["text"] == "1,250点" and b["confidence"] == 0.61
+    assert b["bbox"] == [0.5, 0.2, 0.75, 0.3] and b["span"] == [12, 6]
+    assert rules.cu_low_words({}, 0.8) == [] and rules.cu_low_words({"fake": True}, 0.8) == []
+
+
+def test_low_confidence_boxes_merges_sorted_and_skips_removed():
+    meta = {
+        "elements": [
+            {"label": "table", "bbox": [0, 0, 1, 0.5], "confidence": 0.7},
+            {"label": "picture", "bbox": [0, 0, 0.1, 0.1], "confidence": 0.1, "removed": True},
+            {"label": "text", "bbox": [0, 0.5, 1, 0.6], "confidence": 0.95},
+            {"label": "text", "bbox": [0, 0.6, 1, 0.7]},
+        ]
+    }
+    words = [{"content": "点", "confidence": 0.55, "source": "D(1,0,0,1,0,1,1,0,1)"}]
+    out = rules.low_confidence_boxes(meta, _cu_raw(words), 0.8)
+    assert [(b["source"], b["confidence"]) for b in out] == [("cu", 0.55), ("docling", 0.7)]
+
+
+def test_docling_attach_confidence_and_page_confidences_without_docling():
+    from types import SimpleNamespace as NS
+
+    from app.steps.docling_engine import attach_confidence, page_confidences
+
+    class Box:  # giống BoundingBox của Docling, đã ở gốc trên-trái
+        def __init__(self, l, t, r, b):  # noqa: E741
+            self.l, self.t, self.r, self.b = l, t, r, b
+
+        def to_top_left_origin(self, page_height):
+            return self
+
+    cluster = NS(label="DocItemLabel.TABLE", bbox=Box(0, 0, 50, 50), confidence=0.66)
+    cell = NS(from_ocr=True, confidence=0.4, text="1,250点", rect=None, bbox=Box(10, 60, 40, 70))
+    clean = NS(from_ocr=True, confidence=0.999, text="ok", rect=None, bbox=Box(0, 80, 10, 90))
+    res = NS(pages=[NS(page_no=0, predictions=NS(layout=NS(clusters=[cluster])), cells=[cell, clean])])
+    clusters, cells = page_confidences(res, 1, 100.0, 100.0)
+    assert clusters == [("table", [0.0, 0.0, 0.5, 0.5], 0.66)]
+    assert cells == [{"label": "ocr_text", "bbox": [0.1, 0.6, 0.4, 0.7], "confidence": 0.4, "text": "1,250点"}]
+    els = [{"label": "table", "bbox": [0.0, 0.0, 0.48, 0.5]}, {"label": "text", "bbox": [0.6, 0.6, 0.9, 0.9]}]
+    attach_confidence(els, clusters)
+    assert els[0]["confidence"] == 0.66 and "confidence" not in els[1]
+    # API khác phiên bản → không vỡ, chỉ trả rỗng
+    assert page_confidences(object(), 1, 100.0, 100.0) == ([], [])

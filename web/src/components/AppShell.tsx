@@ -6,7 +6,10 @@ import {
   ListChecks,
   LogOut,
   Menu,
+  MessagesSquare,
   Moon,
+  PanelLeftClose,
+  PanelLeftOpen,
   ScrollText,
   Search,
   Settings,
@@ -29,6 +32,7 @@ import {
   DropdownLabel,
   DropdownSeparator,
   DropdownTrigger,
+  Tip,
 } from "./ui";
 
 function useTheme() {
@@ -44,14 +48,28 @@ function useTheme() {
   return { dark, toggle: () => setDark((d) => !d) };
 }
 
-function NavItem({ to, icon, label, end }: { to: string; icon: React.ReactNode; label: string; end?: boolean }) {
-  return (
+function NavItem({
+  to,
+  icon,
+  label,
+  end,
+  collapsed,
+}: {
+  to: string;
+  icon: React.ReactNode;
+  label: string;
+  end?: boolean;
+  collapsed?: boolean;
+}) {
+  const link = (
     <NavLink
       to={to}
       end={end}
+      aria-label={collapsed ? label : undefined}
       className={({ isActive }) =>
         cn(
-          "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition [&_svg]:size-[18px]",
+          "flex items-center gap-3 rounded-lg py-2 text-sm font-medium transition [&_svg]:size-[18px] [&_svg]:shrink-0",
+          collapsed ? "justify-center px-0" : "px-3",
           isActive
             ? "bg-primary-soft text-primary"
             : "text-muted-foreground hover:bg-accent hover:text-foreground",
@@ -59,9 +77,46 @@ function NavItem({ to, icon, label, end }: { to: string; icon: React.ReactNode; 
       }
     >
       {icon}
-      {label}
+      {!collapsed && <span className="truncate">{label}</span>}
     </NavLink>
   );
+  // Thu gọn: chỉ còn icon, tên hiện ở tooltip bên phải
+  return collapsed ? (
+    <Tip content={label} side="right">
+      {link}
+    </Tip>
+  ) : (
+    link
+  );
+}
+
+function NavSection({ label, collapsed }: { label: string; collapsed: boolean }) {
+  return collapsed ? (
+    <div className="mx-2 my-2 border-t border-border" role="separator" aria-label={label} />
+  ) : (
+    <p className="px-3 pb-1 pt-4 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/80 first-of-type:pt-2">
+      {label}
+    </p>
+  );
+}
+
+/** Trạng thái thu gọn sidebar (desktop), nhớ theo trình duyệt. */
+function useSidebarCollapsed() {
+  const [collapsed, setCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem("hoken.sidebar") === "collapsed";
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem("hoken.sidebar", collapsed ? "collapsed" : "expanded");
+    } catch {
+      /* bỏ qua */
+    }
+  }, [collapsed]);
+  return { collapsed, toggle: () => setCollapsed((c) => !c) };
 }
 
 export function AppShell() {
@@ -70,57 +125,87 @@ export function AppShell() {
   const theme = useTheme();
   const [open, setOpen] = useState(false);
   const [pwOpen, setPwOpen] = useState(false);
+  const sidebar = useSidebarCollapsed();
   const loc = useLocation();
   useEffect(() => setOpen(false), [loc.pathname]);
   const fullBleed = /\/documents\/[^/]+\/(pages|chunks)/.test(loc.pathname);
 
-  const nav = (
-    <nav className="flex h-full flex-col gap-1 p-3">
-      <div className="mb-4 flex items-center gap-2.5 px-2 pt-1">
-        <div className="flex size-9 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
-          <svg viewBox="0 0 32 32" className="size-5">
+  /** Menu dùng cho sidebar desktop (có thể thu gọn) và ngăn kéo trên mobile (luôn mở rộng). */
+  const nav = (collapsed: boolean, collapsible: boolean) => (
+    <nav className="flex h-full flex-col gap-1 overflow-y-auto overflow-x-hidden p-3">
+      <div className={cn("mb-4 flex items-center gap-2.5 pt-1", collapsed ? "justify-center px-0" : "px-2")}>
+        <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
+          <svg viewBox="0 0 32 32" className="size-5" aria-hidden>
             <path d="M9 16h14M16 9v14" stroke="currentColor" strokeWidth="3.2" strokeLinecap="round" />
           </svg>
         </div>
-        <div className="min-w-0">
-          <p className="truncate text-sm font-semibold">{t("app.name")}</p>
-          <p className="truncate text-[11px] text-muted-foreground">{t("app.tagline")}</p>
-        </div>
+        {!collapsed && (
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold">{t("app.name")}</p>
+            <p className="truncate text-[11px] text-muted-foreground">{t("app.tagline")}</p>
+          </div>
+        )}
       </div>
-      <p className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/80">
-        {t("nav.sectionWork")}
-      </p>
-      <NavItem to="/" end icon={<Gauge />} label={t("nav.dashboard")} />
-      <NavItem to="/documents" icon={<FileText />} label={t("nav.documents")} />
-      <NavItem to="/jobs" icon={<ListChecks />} label={t("nav.jobs")} />
-      {can("reviewer") && <NavItem to="/search" icon={<Search />} label={t("nav.search")} />}
+      <NavSection label={t("nav.sectionWork")} collapsed={collapsed} />
+      <NavItem to="/" end icon={<Gauge />} label={t("nav.dashboard")} collapsed={collapsed} />
+      <NavItem to="/documents" icon={<FileText />} label={t("nav.documents")} collapsed={collapsed} />
+      <NavItem to="/jobs" icon={<ListChecks />} label={t("nav.jobs")} collapsed={collapsed} />
+      {can("reviewer") && (
+        <>
+          <NavSection label={t("nav.sectionTest")} collapsed={collapsed} />
+          <NavItem to="/test/search" icon={<Search />} label={t("nav.search")} collapsed={collapsed} />
+          <NavItem to="/test/chat" icon={<MessagesSquare />} label={t("nav.chat")} collapsed={collapsed} />
+        </>
+      )}
       {can("admin") && (
         <>
-          <p className="px-3 pb-1 pt-4 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/80">
-            {t("nav.sectionAdmin")}
-          </p>
-          <NavItem to="/settings" icon={<Settings />} label={t("nav.settings")} />
-          <NavItem to="/users" icon={<Users />} label={t("nav.users")} />
-          <NavItem to="/audit" icon={<ScrollText />} label={t("nav.audit")} />
+          <NavSection label={t("nav.sectionAdmin")} collapsed={collapsed} />
+          <NavItem to="/settings" icon={<Settings />} label={t("nav.settings")} collapsed={collapsed} />
+          <NavItem to="/users" icon={<Users />} label={t("nav.users")} collapsed={collapsed} />
+          <NavItem to="/audit" icon={<ScrollText />} label={t("nav.audit")} collapsed={collapsed} />
         </>
+      )}
+      {collapsible && (
+        <div className="mt-auto pt-3">
+          <Tip content={collapsed ? t("nav.expand") : ""} side="right">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={sidebar.toggle}
+              aria-label={collapsed ? t("nav.expand") : t("nav.collapse")}
+              aria-expanded={!collapsed}
+              className={cn("w-full text-muted-foreground", collapsed ? "justify-center px-0" : "justify-start")}
+            >
+              {collapsed ? <PanelLeftOpen /> : <PanelLeftClose />}
+              {!collapsed && t("nav.collapse")}
+            </Button>
+          </Tip>
+        </div>
       )}
     </nav>
   );
 
   return (
     <div className="flex h-full">
-      <aside className="hidden w-60 shrink-0 border-r border-border bg-sidebar lg:block">{nav}</aside>
+      <aside
+        className={cn(
+          "hidden shrink-0 border-r border-border bg-sidebar transition-[width] duration-200 lg:block",
+          sidebar.collapsed ? "w-16" : "w-60",
+        )}
+      >
+        {nav(sidebar.collapsed, true)}
+      </aside>
       {open && (
         <div className="fixed inset-0 z-40 lg:hidden" onClick={() => setOpen(false)}>
           <div className="absolute inset-0 bg-black/30" />
           <aside className="absolute inset-y-0 left-0 w-64 bg-sidebar shadow-xl" onClick={(e) => e.stopPropagation()}>
-            {nav}
+            {nav(false, false)}
           </aside>
         </div>
       )}
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-border bg-card/70 px-4 backdrop-blur lg:px-6">
-          <Button variant="ghost" size="icon" className="lg:hidden" onClick={() => setOpen(true)} aria-label="menu">
+          <Button variant="ghost" size="icon" className="lg:hidden" onClick={() => setOpen(true)} aria-label={t("nav.openMenu")}>
             <Menu />
           </Button>
           <div className="flex-1" />

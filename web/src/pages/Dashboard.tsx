@@ -4,11 +4,12 @@ import { useTranslation } from "react-i18next";
 import { Link, useNavigate } from "react-router-dom";
 import { PageHeader, StatCard } from "@/components/common";
 import { DocStatusBadge } from "@/components/status";
+import { docPageTotal, docProgress, useDocProgressLabel } from "@/components/docProgress";
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, EmptyState, Progress, Skeleton } from "@/components/ui";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import type { Doc, DocStatus, Job } from "@/lib/types";
-import { fmtRelative, pct } from "@/lib/utils";
+import { fmtRelative } from "@/lib/utils";
 
 interface Dash {
   documents: number;
@@ -34,6 +35,7 @@ const STAGES: DocStatus[] = [
 
 export default function DashboardPage() {
   const { t } = useTranslation();
+  const progressLabel = useDocProgressLabel();
   const nav = useNavigate();
   const { can } = useAuth();
   const dash = useQuery({ queryKey: ["dashboard"], queryFn: () => api.get<Dash>("/dashboard"), refetchInterval: 5000 });
@@ -100,8 +102,8 @@ export default function DashboardPage() {
             )}
             <ul className="divide-y divide-border">
               {docs.data?.slice(0, 6).map((doc) => {
-                const total = doc.page_to - doc.page_from + 1;
-                const approved = doc.stats.approved ?? 0;
+                const total = docPageTotal(doc);
+                const p = docProgress(doc);
                 return (
                   <li key={doc.id}>
                     <Link to={`/documents/${doc.id}`} className="flex items-center gap-4 py-3 hover:opacity-80">
@@ -113,10 +115,8 @@ export default function DashboardPage() {
                         </p>
                       </div>
                       <div className="hidden w-40 sm:block">
-                        <Progress value={pct(approved, total)} tone={approved === total ? "success" : "primary"} />
-                        <p className="mt-1 text-right text-[11px] text-muted-foreground">
-                          {t("detail.reviewed", { n: approved, total })}
-                        </p>
+                        <Progress value={p} tone={doc.status === "failed" ? "danger" : p === 100 ? "success" : "primary"} />
+                        <p className="mt-1 text-right text-[11px] text-muted-foreground">{progressLabel(doc)}</p>
                       </div>
                       <DocStatusBadge status={doc.status} />
                     </Link>

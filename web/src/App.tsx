@@ -8,7 +8,7 @@ import { AuthProvider, useAuth } from "./lib/auth";
 import type { Role } from "./lib/types";
 import AuditPage from "./pages/Audit";
 import DashboardPage from "./pages/Dashboard";
-import DocumentDetailPage from "./pages/DocumentDetail";
+import DocumentDetailPage, { NextReviewRedirect } from "./pages/DocumentDetail";
 import DocumentsPage from "./pages/Documents";
 import JobsPage from "./pages/Jobs";
 import LoginPage from "./pages/Login";
@@ -19,6 +19,7 @@ import UsersPage from "./pages/Users";
 const PageReviewPage = lazy(() => import("./pages/PageReview"));
 const ChunkReviewPage = lazy(() => import("./pages/ChunkReview"));
 const SettingsPage = lazy(() => import("./pages/Settings"));
+const ChatTestPage = lazy(() => import("./pages/ChatTest"));
 
 function Splash() {
   return (
@@ -61,14 +62,24 @@ function Routed() {
         <Route index element={<DashboardPage />} />
         <Route path="documents" element={<DocumentsPage />} />
         <Route path="documents/:docId" element={<DocumentDetailPage />} />
+        <Route path="documents/:docId/review" element={<NextReviewRedirect />} />
         <Route path="documents/:docId/pages/:page" element={<PageReviewPage />} />
         <Route path="documents/:docId/chunks" element={<ChunkReviewPage />} />
         <Route path="jobs" element={<JobsPage />} />
+        <Route path="search" element={<Navigate to="/test/search" replace />} />
         <Route
-          path="search"
+          path="test/search"
           element={
             <Guard role="reviewer">
               <SearchPage />
+            </Guard>
+          }
+        />
+        <Route
+          path="test/chat"
+          element={
+            <Guard role="reviewer">
+              <ChatTestPage />
             </Guard>
           }
         />

@@ -125,3 +125,75 @@ def test_upload_review_flow_via_api(client, container, sample_pdf):
     assert any(e["code"] == "stitch.done" for e in events)
     dash = client.get("/api/dashboard").json()
     assert dash["documents"] == 1
+
+
+def test_rename_and_paged_lists(client, container, sample_pdf):
+    import app.steps.handlers  # noqa: F401
+
+    _setup_admin(client)
+    doc_id = client.post(
+        "/api/documents",
+        files={"file": ("s.pdf", sample_pdf, "application/pdf")},
+        data={"name": "Sample", "kind": "akahon"},
+        headers=H,
+    ).json()["id"]
+    run_worker(container, ["docling", "light", "ai"], drain=True, idle_exit_s=0, poll_s=0)
+
+    # Đổi tên: tên rỗng giữ nguyên, tên mới ghi audit (chỉ id, không chép tên)
+    assert client.patch(f"/api/documents/{doc_id}", json={"name": "  "}, headers=H).json()["name"] == "Sample"
+    assert client.patch(f"/api/documents/{doc_id}", json={"name": " Renamed "}, headers=H).json()["name"] == "Renamed"
+    audit = client.get("/api/audit?q=doc.rename&paged=true").json()
+    assert audit["total"] == 1 and audit["items"][0]["target"] == doc_id
+    assert "Renamed" not in str(audit["items"][0]["detail"])
+
+    # Jobs: mặc định vẫn trả mảng; paged trả {items, total}; q lọc theo tên tài liệu
+    assert isinstance(client.get("/api/jobs").json(), list)
+    page = client.get("/api/jobs?paged=true&limit=2&offset=1").json()
+    total = page["total"]
+    assert total >= 4 and len(page["items"]) == 2
+    assert client.get("/api/jobs?paged=true&q=renam").json()["total"] == total
+    assert client.get("/api/jobs?paged=true&q=nope").json() == {"items": [], "total": 0}
+
+
+def test_page_low_confidence_and_raw_json(client, container, sample_pdf):
+    import json
+
+    import app.steps.handlers  # noqa: F401
+    from app.steps.common import k_page
+
+    _setup_admin(client)
+    doc_id = client.post(
+        "/api/documents",
+        files={"file": ("s.pdf", sample_pdf, "application/pdf")},
+        data={"name": "Sample", "kind": "akahon"},
+        headers=H,
+    ).json()["id"]
+    run_worker(container, ["docling", "light", "ai"], drain=True, idle_exit_s=0, poll_s=0)
+    cu = {
+        "result": {
+            "contents": [
+                {
+                    "markdown": "x",
+                    "pages": [
+                        {
+                            "width": 8.0,
+                            "height": 10.0,
+                            "words": [{"content": "点", "confidence": 0.5, "source": "D(1,0,0,4,0,4,5,0,5)"}],
+                        }
+                    ],
+                }
+            ]
+        }
+    }
+    container.blob.put(k_page(doc_id, 1, "cu.json"), json.dumps(cu).encode(), "application/json")
+
+    page = client.get(f"/api/documents/{doc_id}/pages/1").json()
+    low = page["low_confidence"]
+    assert low["threshold"] == 0.8
+    assert low["boxes"] == [
+        {"source": "cu", "label": "word", "text": "点", "confidence": 0.5, "bbox": [0.0, 0.0, 0.5, 0.5], "span": None}
+    ]
+    assert client.get(f"/api/documents/{doc_id}/pages/1/raw/cu").json() == cu
+    assert "elements" in client.get(f"/api/documents/{doc_id}/pages/1/raw/docling").json()
+    assert client.get(f"/api/documents/{doc_id}/pages/1/raw/secrets").status_code == 404
+    assert client.get(f"/api/documents/{doc_id}/pages/2/raw/cu").status_code == 404

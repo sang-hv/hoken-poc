@@ -11,7 +11,7 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 
 /* ---------------------------------------------------------------- Button */
-const buttonVariants = cva(
+export const buttonVariants = cva(
   "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-medium transition-all disabled:pointer-events-none disabled:opacity-50 [&_svg]:size-4 [&_svg]:shrink-0 cursor-pointer select-none",
   {
     variants: {
@@ -151,14 +151,20 @@ export function Field({
   const content = only
     ? React.cloneElement(only as React.ReactElement<Record<string, unknown>>, { id: childId, "aria-describedby": hintId })
     : children;
+  // Subgrid 3 hàng (nhãn · ô nhập · gợi ý): trong lưới nhiều cột, ô nhập các cột luôn thẳng hàng dù nhãn dài ngắn
+  // khác nhau. Ngoài lưới thì `subgrid` không áp dụng và Field xếp dọc như bình thường.
   return (
-    <div className={cn("flex flex-col gap-1.5", className)}>
-      <Label htmlFor={childId}>{label}</Label>
+    <div className={cn("row-span-3 grid grid-rows-subgrid content-start gap-1.5", className)}>
+      <Label htmlFor={childId} className="self-end">
+        {label}
+      </Label>
       {content}
-      {hint && (
+      {hint ? (
         <p id={hintId} className="text-xs text-muted-foreground">
           {hint}
         </p>
+      ) : (
+        <span aria-hidden />
       )}
     </div>
   );
@@ -204,8 +210,10 @@ export function Select({
   className,
   disabled,
   id,
+  "aria-label": ariaLabel,
 }: {
   id?: string;
+  "aria-label"?: string;
   value: string;
   onValueChange: (v: string) => void;
   options: { value: string; label: React.ReactNode; disabled?: boolean }[];
@@ -217,12 +225,15 @@ export function Select({
     <SelectPrimitive.Root value={value || undefined} onValueChange={onValueChange} disabled={disabled}>
       <SelectPrimitive.Trigger
         id={id}
+        aria-label={ariaLabel}
         className={cn(
           "inline-flex h-9 w-full items-center justify-between gap-2 rounded-lg border border-input bg-card px-3 text-sm shadow-card outline-none focus:border-ring focus:ring-3 focus:ring-ring/20 data-[placeholder]:text-muted-foreground disabled:opacity-60",
           className,
         )}
       >
-        <SelectPrimitive.Value placeholder={placeholder} />
+        <span className="min-w-0 truncate">
+          <SelectPrimitive.Value placeholder={placeholder} />
+        </span>
         <SelectPrimitive.Icon>
           <ChevronDown className="size-4 opacity-60" />
         </SelectPrimitive.Icon>
@@ -327,13 +338,22 @@ export function Dialog({
 }
 
 /* ---------------------------------------------------------------- Tooltip */
-export function Tip({ content, children }: { content: React.ReactNode; children: React.ReactNode }) {
+export function Tip({
+  content,
+  children,
+  side,
+}: {
+  content: React.ReactNode;
+  children: React.ReactNode;
+  side?: "top" | "right" | "bottom" | "left";
+}) {
   if (!content) return <>{children}</>;
   return (
     <TooltipPrimitive.Root delayDuration={250}>
       <TooltipPrimitive.Trigger asChild>{children}</TooltipPrimitive.Trigger>
       <TooltipPrimitive.Portal>
         <TooltipPrimitive.Content
+          side={side}
           sideOffset={6}
           className="z-50 max-w-xs rounded-md bg-foreground px-2.5 py-1.5 text-xs text-background shadow-lg"
         >

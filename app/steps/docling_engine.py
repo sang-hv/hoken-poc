@@ -85,6 +85,71 @@ def _bbox_tl(prov, page_w: float, page_h: float) -> list[float]:
     return [round(bb.l / page_w, 4), round(bb.t / page_h, 4), round(bb.r / page_w, 4), round(bb.b / page_h, 4)]
 
 
+def _iou(a: list[float], b: list[float]) -> float:
+    ix = max(0.0, min(a[2], b[2]) - max(a[0], b[0]))
+    iy = max(0.0, min(a[3], b[3]) - max(a[1], b[1]))
+    inter = ix * iy
+    union = (a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - inter
+    return inter / union if union > 0 else 0.0
+
+
+def _norm_box(bb, pw: float, ph: float) -> list[float] | None:
+    """BoundingBox của Docling (gốc trên-trái hoặc dưới-trái) → [x0,y0,x1,y1] 0..1 gốc trên-trái."""
+    try:
+        bb = bb.to_top_left_origin(page_height=ph)
+        return [round(bb.l / pw, 4), round(bb.t / ph, 4), round(bb.r / pw, 4), round(bb.b / ph, 4)]
+    except Exception:  # noqa: BLE001
+        return None
+
+
+OCR_CELL_KEEP = 0.99  # chỉ giữ ô OCR có confidence dưới mức này cho đỡ nặng docling.json
+
+
+def page_confidences(res, page: int, pw: float, ph: float) -> tuple[list[tuple[str, list[float], float]], list[dict]]:
+    """Confidence theo vùng mà bản xuất DoclingDocument không giữ: cụm layout (`predictions.layout.clusters`)
+    và ô chữ OCR (`cells` có `from_ocr`). Phiên bản Docling khác API thì trả rỗng — chỉ mất phần tô màu."""
+    try:
+        pages = list(getattr(res, "pages", None) or [])
+        pg = next((p for p in pages if getattr(p, "page_no", None) == page - 1), None)
+        if pg is None and len(pages) == 1:
+            pg = pages[0]
+        if pg is None:
+            return [], []
+        clusters = []
+        layout = getattr(getattr(pg, "predictions", None), "layout", None)
+        for cl in getattr(layout, "clusters", None) or []:
+            box, conf = _norm_box(cl.bbox, pw, ph), _num(getattr(cl, "confidence", None))
+            if box and conf is not None:
+                clusters.append((str(getattr(cl, "label", "")).split(".")[-1].lower(), box, conf))
+        cells = []
+        for cell in getattr(pg, "cells", None) or []:
+            conf = _num(getattr(cell, "confidence", None))
+            if not getattr(cell, "from_ocr", False) or conf is None or conf >= OCR_CELL_KEEP:
+                continue
+            rect = getattr(cell, "rect", None)
+            raw = (
+                rect.to_bounding_box()
+                if rect is not None and hasattr(rect, "to_bounding_box")
+                else getattr(cell, "bbox", None)
+            )
+            box = _norm_box(raw, pw, ph) if raw is not None else None
+            if box:
+                cells.append(
+                    {"label": "ocr_text", "bbox": box, "confidence": conf, "text": str(getattr(cell, "text", ""))[:200]}
+                )
+        return clusters, cells
+    except Exception:  # noqa: BLE001 — điểm phụ cho UI, không làm hỏng bước Docling
+        return [], []
+
+
+def attach_confidence(elements: list[dict], clusters: list[tuple[str, list[float], float]]) -> None:
+    """Gắn confidence của cụm layout trùng nhiều nhất (IoU ≥ 0.5) vào từng phần tử."""
+    for el in elements:
+        best = max(((_iou(el["bbox"], box), conf) for _label, box, conf in clusters), default=(0.0, None))
+        if best[0] >= 0.5 and best[1] is not None:
+            el["confidence"] = best[1]
+
+
 def analyze_with_docling(pdf: bytes, page: int, opts: DoclingOptions) -> PageAnalysis:
     from docling.datamodel.base_models import DocumentStream
 
@@ -152,6 +217,10 @@ def analyze_with_docling(pdf: bytes, page: int, opts: DoclingOptions) -> PageAna
         prov = next((p for p in getattr(item, "prov", []) if p.page_no == page), None)
         if prov:
             elements.append({"label": label, "bbox": _bbox_tl(prov, pw, ph)})
+
+    clusters, ocr_cells = page_confidences(res, page, pw, ph)
+    attach_confidence(elements, clusters)
+    elements.extend(ocr_cells)
 
     md = doc.export_to_markdown(page_no=page, image_placeholder="<!-- image -->")
     it = iter(placeholders)

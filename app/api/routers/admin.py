@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import time
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, EmailStr, Field
 
 from app.api.deps import admin, container, current_user, reviewer, viewer
@@ -187,9 +187,25 @@ def change_password(body: PasswordIn, c: Container = Depends(container), user: U
 
 
 # ------------------------------------------------------------------ audit
+AUDIT_SCAN = 5000  # số bản ghi gần nhất được lọc/phân trang (PoC; cần truy vấn phía DB nếu nhiều hơn)
+
+
 @router.get("/audit")
-def audit(limit: int = 300, c: Container = Depends(container), _: User = Depends(admin)):
-    return [a.model_dump(mode="json") for a in c.repo.list_audit(limit)]
+def audit(
+    q: str = "",
+    limit: int = Query(300, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
+    paged: bool = False,
+    c: Container = Depends(container),
+    _: User = Depends(admin),
+):
+    """`q` khớp người thực hiện / hành động / đối tượng. `paged=true` trả {items, total}."""
+    entries = c.repo.list_audit(AUDIT_SCAN if (paged or q) else limit)
+    if q.strip():
+        needle = q.strip().lower()
+        entries = [a for a in entries if needle in f"{a.actor} {a.action} {a.target}".lower()]
+    items = [a.model_dump(mode="json") for a in entries[offset : offset + limit]]
+    return {"items": items, "total": len(entries)} if paged else items
 
 
 # ------------------------------------------------------------------ tìm thử
@@ -210,6 +226,29 @@ def search(body: SearchIn, c: Container = Depends(container), _: User = Depends(
     vec = embedder.embed([body.q])[0]
     hits = idx.search(body.q, vec, body.k)
     return {"ms": int((time.monotonic() - t0) * 1000), "hits": [{**h.__dict__} for h in hits]}
+
+
+class ChatTurn(BaseModel):
+    role: str = Field(pattern="^(user|assistant)$")
+    content: str = Field(max_length=8000)
+
+
+class ChatIn(BaseModel):
+    q: str = Field(min_length=1, max_length=1000)
+    history: list[ChatTurn] = Field(default_factory=list, max_length=40)
+    k: int | None = Field(default=None, ge=1, le=20)
+
+
+@router.post("/chat/test")
+def chat_test(body: ChatIn, c: Container = Depends(container), _: User = Depends(reviewer)):
+    """Chat thử với tài liệu đã index. Không lưu câu hỏi và không ghi nội dung vào log."""
+    from app.services import chat
+    from app.services.config_service import NotConfigured
+
+    try:
+        return chat.ask(c, body.q, [t.model_dump() for t in body.history], body.k)
+    except NotConfigured as e:
+        raise HTTPException(409, {"code": f"{e.component}_not_configured"}) from e
 
 
 @router.get("/search/status")

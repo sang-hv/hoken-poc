@@ -13,6 +13,7 @@ from app.domain.models import User
 from app.services import chunks as chunk_svc
 from app.services import pipeline as pl
 from app.services.container import Container
+from app.steps import rules
 from app.steps.common import k_page, k_source, k_version
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
@@ -66,16 +67,17 @@ def get_document(doc_id: str, c: Container = Depends(container), _: User = Depen
 
 
 class DocPatch(BaseModel):
-    name: str | None = None
+    name: str | None = Field(default=None, max_length=200)
     enabled: bool | None = None
 
 
 @router.patch("/{doc_id}")
 def patch_document(doc_id: str, body: DocPatch, c: Container = Depends(container), user: User = Depends(reviewer)):
     doc = _doc(c, doc_id)
-    if body.name is not None:
-        doc.name = body.name.strip() or doc.name
+    if body.name is not None and body.name.strip() and body.name.strip() != doc.name:
+        doc.name = body.name.strip()
         c.repo.save_doc(doc)
+        c.repo.audit(user.email, "doc.rename", doc_id)  # không ghi tên vào log, chỉ id
     if body.enabled is not None:
         doc = pl.set_enabled(c, doc_id, body.enabled, user.email)
     return doc.model_dump(mode="json")
@@ -139,15 +141,45 @@ def get_page(doc_id: str, page: int, c: Container = Depends(container), _: User 
         key = k_page(doc_id, page, f"{name}.md")
         if c.blob.exists(key):
             sources[name] = c.blob.get(key).decode()
-    meta_key = k_page(doc_id, page, "docling.json")
-    meta = json.loads(c.blob.get(meta_key)) if c.blob.exists(meta_key) else {}
+    meta = _raw_json(c, doc_id, page, "docling") or {}
+    threshold = c.config.pipeline()[1].review.low_confidence
     return {
         **p.model_dump(mode="json"),
         "markdown": pl.page_markdown(c, p),
         "sources": sources,
         "elements": meta.get("elements", []),
         "image_size": meta.get("image_size"),
+        # Vùng confidence thấp (Docling + CU) để viền đỏ — chỉ để tô màu, không bỏ qua review
+        "low_confidence": {
+            "threshold": threshold,
+            "boxes": rules.low_confidence_boxes(meta, _raw_json(c, doc_id, page, "cu"), threshold),
+        },
     }
+
+
+RAW_SOURCES = ("docling", "cu")
+
+
+def _raw_json(c: Container, doc_id: str, page: int, name: str) -> dict | None:
+    key = k_page(doc_id, page, f"{name}.json")
+    if not c.blob.exists(key):
+        return None
+    try:
+        return json.loads(c.blob.get(key))
+    except ValueError:
+        return None
+
+
+@router.get("/{doc_id}/pages/{page}/raw/{name}")
+def get_page_raw(doc_id: str, page: int, name: str, c: Container = Depends(container), _: User = Depends(viewer)):
+    """Kết quả thô của Docling (`docling.json`) hoặc Content Understanding (`cu.json`) cho tab JSON."""
+    _page(c, doc_id, page)
+    if name not in RAW_SOURCES:
+        raise HTTPException(404, {"code": "raw_not_found"})
+    key = k_page(doc_id, page, f"{name}.json")
+    if not c.blob.exists(key):
+        raise HTTPException(404, {"code": "raw_not_found"})
+    return Response(c.blob.get(key), media_type="application/json")
 
 
 @router.get("/{doc_id}/pages/{page}/image")

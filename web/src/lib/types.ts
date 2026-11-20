@@ -101,6 +101,18 @@ export interface Element {
   class?: string;
   removed?: boolean;
   figure?: number;
+  confidence?: number;
+  text?: string;
+}
+
+/** Vùng confidence thấp (chữ CU hoặc phần tử Docling) — chỉ để viền đỏ, không bỏ qua review. */
+export interface LowConfidenceBox {
+  source: "docling" | "cu";
+  label: string;
+  text: string;
+  confidence: number;
+  bbox: [number, number, number, number];
+  span: [number, number] | null;
 }
 
 export interface PageDetail extends Page {
@@ -108,6 +120,7 @@ export interface PageDetail extends Page {
   sources: Partial<Record<"docling" | "cu" | "stitched", string>>;
   elements: Element[];
   image_size: [number, number] | null;
+  low_confidence: { threshold: number; boxes: LowConfidenceBox[] };
 }
 
 export interface Chunk {

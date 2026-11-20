@@ -67,6 +67,39 @@ def _split(lines: list[str], code: str) -> list[dict]:
     return chunks
 
 
+def _bigrams(text: str) -> set[str]:
+    t = re.sub(r"\s+", "", text)
+    return {t[i : i + 2] for i in range(len(t) - 1)}
+
+
+def _chat_rag(user: str) -> str:
+    """Giả lập chatbot: chọn đoạn trùng nhiều cặp ký tự với câu hỏi nhất, trích 2 dòng đầu kèm [n]; không đoạn
+    nào đủ giống → chuyển CSKH. Chỉ để test UI, không phải chất lượng trả lời thật."""
+    body, _, question = user.rpartition("\n\nQuestion: ")
+    blocks = re.split(r"\n\n(?=\[\d+\] )", body.removeprefix("Sources:\n"))
+    q = _bigrams(question)
+    scored = []
+    for b in blocks:
+        m = re.match(r"\[(\d+)\] (\S+)", b)
+        if m:
+            scored.append((len(q & _bigrams(b)), int(m.group(1)), m.group(2), b.split("\n", 1)[-1]))
+    scored.sort(reverse=True)
+    if not scored or scored[0][0] < 3:
+        return json.dumps({"answer": "", "cited": [], "handoff": True}, ensure_ascii=False)
+    _, n, code, content = scored[0]
+    lines = [
+        re.sub(r"\s*\|\s*", " ", ln).strip()
+        for ln in content.split("\n")
+        if ln.strip() and not ln.startswith(("|---", "#", "| 列"))
+    ][:3]
+    answer = f"{code} によると、" + " / ".join(lines) + f" [{n}]"
+    cited = [n]
+    if len(scored) > 1 and scored[1][0] >= 3:
+        answer += f"（関連: {scored[1][2]} [{scored[1][1]}]）"
+        cited.append(scored[1][1])
+    return json.dumps({"answer": answer, "cited": cited, "handoff": False}, ensure_ascii=False)
+
+
 def _chat_answer(messages: list[dict], json_mode: bool) -> str:
     def text_of(m):
         c = m["content"]
@@ -87,6 +120,8 @@ def _chat_answer(messages: list[dict], json_mode: bool) -> str:
             # Vòng đầu cố tình bỏ sót dòng cuối → bộ kiểm tra luật bắt lỗi "coverage", agent sửa ở vòng 2
             return json.dumps({"chunks": [{"start": 0, "end": len(lines) - 2, "item_code": code}]})
         return json.dumps({"chunks": _split(lines, code or (CODE.search(lines[0]) or [""])[0])})
+    if json_mode and "dental insurance (保険点数) assistant" in system:
+        return _chat_rag(user)
     if json_mode and "Rate from 0 to 1" in system:
         return json.dumps({"score": round(0.55 + (_h(user) % 41) / 100, 2)})
     if has_image and "Current Markdown" in user:
@@ -147,11 +182,71 @@ def _cu_markdown(pdf: bytes) -> str:
     return "\n".join(out).strip() + "\n"
 
 
+def _cu_pages(pdf: bytes, markdown: str) -> list[dict]:
+    """Giả lập `pages[].words[]` của prebuilt-layout: mỗi từ có `confidence`, `source` D(trang,8 số toạ độ inch)
+    và `span` trỏ vào markdown. Confidence giả lập cố định theo nội dung; vài từ có số/点 bị hạ thấp để UI có
+    chỗ viền đỏ."""
+    import pypdfium2 as pdfium
+
+    doc = pdfium.PdfDocument(pdf)
+    out = []
+    for n, page in enumerate(doc, start=1):
+        w, h = page.get_size()
+        tp = page.get_textpage()
+        chars = []
+        for i in range(tp.count_rects()):
+            left, bottom, right, top = tp.get_rect(i)
+            text = tp.get_text_bounded(left, bottom, right, top)
+            if text.strip():
+                chars.append((text.strip(), left, h - top, right, h - bottom))
+        chars.sort(key=lambda c: (round((c[2] + c[4]) / 2 / 4), c[1]))
+        runs: list[list] = []  # gom rect cùng dòng, sát nhau thành một đoạn
+        for t, x0, y0, x1, y1 in chars:
+            if runs:
+                r = runs[-1]
+                if abs((r[2] + r[4]) / 2 - (y0 + y1) / 2) < 4 and 0 <= x0 - r[3] < 12:
+                    runs[-1] = [r[0] + t, r[1], min(r[2], y0), x1, max(r[4], y1)]
+                    continue
+            runs.append([t, x0, y0, x1, y1])
+        # Tìm span trên markdown đã bỏ khoảng trắng (text PDF và markdown khác nhau ở dấu cách) rồi đổi lại offset
+        # (bỏ cả hàng tiêu đề "| 列1 | 列2 |" mà mock tự thêm — chữ đó không có trong PDF)
+        fake = {i for m in re.finditer(r"^\|[ 列\d|]*$", markdown, re.M) for i in range(m.start(), m.end())}
+        keep = [i for i, ch in enumerate(markdown) if not ch.isspace() and i not in fake]
+        md_ns = "".join(markdown[i] for i in keep)
+        words, cursor = [], 0
+        for t, x0, y0, x1, y1 in runs:
+            tokens = t.split()
+            total = max(1, sum(len(k) for k in tokens))
+            pos = 0
+            for tok in tokens:
+                a = x0 + (x1 - x0) * pos / total
+                b = x0 + (x1 - x0) * (pos + len(tok)) / total
+                pos += len(tok)
+                hv = _h(tok)
+                conf = 0.9 + (hv % 100) / 1000
+                if re.search(r"[\d点]", tok) and hv % 4 == 0:
+                    conf = 0.55 + (hv % 20) / 100
+                at = md_ns.find(tok, cursor)
+                word = {
+                    "content": tok,
+                    "confidence": round(conf, 3),
+                    "source": "D({},{})".format(n, ",".join(f"{v / 72:.4f}" for v in (a, y0, b, y0, b, y1, a, y1))),
+                }
+                if at >= 0:
+                    start, end = keep[at], keep[at + len(tok) - 1] + 1
+                    word["span"] = {"offset": start, "length": end - start}
+                    cursor = at + len(tok)
+                words.append(word)
+        out.append({"pageNumber": n, "width": round(w / 72, 4), "height": round(h / 72, 4), "words": words})
+    return out
+
+
 @app.post("/contentunderstanding/analyzers/{rest:path}")
 async def cu_analyze(rest: str, req: Request):
     data = await req.body()
     op = uuid.uuid4().hex
-    _ops[op] = {"ready_at": time.time() + 1.5, "markdown": _cu_markdown(data)}
+    md = _cu_markdown(data)
+    _ops[op] = {"ready_at": time.time() + 1.5, "markdown": md, "pages": _cu_pages(data, md)}
     base = str(req.base_url).rstrip("/")
     return JSONResponse(
         {"id": op, "status": "Running"},
@@ -167,7 +262,8 @@ async def cu_result(op: str):
         return JSONResponse({"error": "not found"}, status_code=404)
     if time.time() < o["ready_at"]:
         return {"id": op, "status": "Running"}
-    return {"id": op, "status": "Succeeded", "result": {"contents": [{"markdown": o["markdown"], "kind": "document"}]}}
+    content = {"markdown": o["markdown"], "kind": "document", "unit": "inch", "pages": o["pages"]}
+    return {"id": op, "status": "Succeeded", "result": {"contents": [content]}}
 
 
 @app.get("/contentunderstanding/analyzers/{analyzer}")

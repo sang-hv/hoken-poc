@@ -117,7 +117,23 @@ def fake_docling(pdf: bytes, page: int, opts) -> PageAnalysis:
     for i, (t, bb) in enumerate(rects):
         if i in skip or t.startswith("- ") or "サンプル" in t:
             continue
-        elements.append({"label": "section_header" if CODE.match(t) else "text", "bbox": bb})
+        elements.append({"label": "section_header" if CODE.match(t) else "text", "bbox": bb, "text": t})
+
+    # Confidence theo phần tử (giả lập cụm layout của Docling): bảng gộp ô / hình thấp hơn, vài dòng có số 点
+    # bị hạ để màn review có chỗ viền đỏ.
+    for el in elements:
+        if el.get("removed"):
+            continue
+        txt = el.get("text", "")
+        h = sum(ord(ch) for ch in txt) if txt else 0
+        if el["label"] == "table":
+            el["confidence"] = 0.68 if feats.complex_tables else 0.86
+        elif el["label"] == "picture":
+            el["confidence"] = 0.77
+        elif re.search(r"\d.*点", txt) and h % 3 == 0:
+            el["confidence"] = round(0.6 + (h % 15) / 100, 2)
+        else:
+            el["confidence"] = round(0.88 + (h % 11) / 100, 2)
 
     # Điểm Docling giả lập: trang có bảng/hình → layout thấp hơn; một trang có lớp text "kém"
     seed = sum(ord(ch) for ch in joined) % 7

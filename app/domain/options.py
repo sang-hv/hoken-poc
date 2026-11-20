@@ -53,6 +53,9 @@ class CuOptions(BaseModel):
 
 
 class ReviewOptions(BaseModel):
+    # Vùng (chữ CU / phần tử Docling) có confidence dưới ngưỡng được viền đỏ trên ảnh trang.
+    # Chỉ để tô màu — trang nào cũng vẫn phải review.
+    low_confidence: float = 0.8
     rerun_prompt: str = DEFAULT_RERUN_PROMPT
 
 
@@ -74,7 +77,25 @@ class ChunkOptions(BaseModel):
 
 class IndexOptions(BaseModel):
     embed_batch: int = 16
-    top_k: int = 5
+    top_k: int = 5  # số đoạn lấy về mặc định khi tìm thử / chat thử
+
+
+DEFAULT_CHAT_PROMPT = (
+    "You are a dental insurance (保険点数) assistant for Japanese dental clinics. Answer ONLY from the numbered "
+    "sources given (public MHLW documents). Answer in the language of the question, concisely, keep item codes "
+    "(e.g. M015-2) and 点 numbers exactly as in the sources, and cite sources inline as [1], [2]. "
+    'Return JSON {"answer": string, "cited": [source numbers], "handoff": boolean}. If the sources do not '
+    'contain the answer, return {"answer": "", "cited": [], "handoff": true} so the question goes to customer '
+    "support — never guess."
+)
+
+
+class ChatOptions(BaseModel):
+    """Chat thử (khu B, bản test trong Admin): tìm đoạn liên quan rồi để LLM trả lời có căn cứ."""
+
+    system_prompt: str = DEFAULT_CHAT_PROMPT
+    min_score: float = 0.0  # đoạn tốt nhất dưới điểm này → chuyển CSKH luôn, không gọi LLM
+    max_history: int = 6  # số lượt hỏi đáp trước đó gửi kèm
 
 
 class PipelineOptions(BaseModel):
@@ -85,3 +106,4 @@ class PipelineOptions(BaseModel):
     stitch: StitchOptions = Field(default_factory=StitchOptions)
     chunk: ChunkOptions = Field(default_factory=ChunkOptions)
     index: IndexOptions = Field(default_factory=IndexOptions)
+    chat: ChatOptions = Field(default_factory=ChatOptions)

@@ -1,20 +1,22 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Ban, ListChecks, RefreshCw } from "lucide-react";
-import { useState } from "react";
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Ban, ListChecks, RefreshCw, X } from "lucide-react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useSearchParams } from "react-router-dom";
-import { PageHeader, useToastError } from "@/components/common";
+import { PageHeader, Pagination, useToastError } from "@/components/common";
 import { LiveLog } from "@/components/LiveLog";
 import { JobStatusBadge } from "@/components/status";
-import { Badge, Button, Card, Dialog, EmptyState, Select, Skeleton } from "@/components/ui";
+import { Badge, Button, Card, Dialog, EmptyState, Input, Select, Skeleton } from "@/components/ui";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { useDebounced } from "@/lib/hooks";
 import { useEventStream } from "@/lib/sse";
 import type { Job, JobEvent } from "@/lib/types";
 import { fmtDateTime, fmtDuration, fmtRelative } from "@/lib/utils";
 
 const STEPS = ["docling", "route", "cu", "stitch", "rerun", "chunk", "index"];
 const STATUSES = ["queued", "running", "succeeded", "failed", "cancelled"];
+const JOBS_PAGE = 50;
 
 function JobDialog({ jobId, onClose }: { jobId: string; onClose: () => void }) {
   const { t } = useTranslation();
@@ -128,35 +130,89 @@ function JobDialog({ jobId, onClose }: { jobId: string; onClose: () => void }) {
 export default function JobsPage() {
   const { t } = useTranslation();
   const [params, setParams] = useSearchParams();
-  const [status, setStatus] = useState("all");
-  const [step, setStep] = useState("all");
-  const q = new URLSearchParams();
+  const status = params.get("status") ?? "all";
+  const step = params.get("step") ?? "all";
+  const page = Number(params.get("page") ?? "1") || 1;
+  // Ô tìm theo tên tài liệu gọi API → debounce, gõ liên tục không bắn request mỗi phím
+  const [search, setSearch] = useState(params.get("q") ?? "");
+  const debounced = useDebounced(search.trim(), 300);
+  const setParam = (key: string, value: string, empty = "") => {
+    setParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (value === empty) next.delete(key);
+        else next.set(key, value);
+        if (key !== "page" && key !== "job") next.delete("page");
+        return next;
+      },
+      { replace: true },
+    );
+  };
+  useEffect(() => {
+    if (debounced !== (params.get("q") ?? "")) setParam("q", debounced);
+  }, [debounced]);
+  const q = new URLSearchParams({ paged: "true", limit: String(JOBS_PAGE), offset: String((page - 1) * JOBS_PAGE) });
   if (status !== "all") q.set("status", status);
   if (step !== "all") q.set("step", step);
-  const jobs = useQuery({ queryKey: ["jobs", status, step], queryFn: () => api.get<Job[]>(`/jobs?${q}`), refetchInterval: 3000 });
+  if (debounced) q.set("q", debounced);
+  const jobs = useQuery({
+    queryKey: ["jobs", status, step, debounced, page],
+    queryFn: () => api.get<{ items: Job[]; total: number }>(`/jobs?${q}`),
+    refetchInterval: 3000,
+    placeholderData: keepPreviousData,
+  });
   const open = params.get("job");
+  const filtered = status !== "all" || step !== "all" || !!debounced;
 
   return (
     <>
       <PageHeader title={t("jobs.title")} subtitle={t("jobs.subtitle")} />
       <Card>
-        <div className="flex flex-wrap items-center gap-3 border-b border-border px-4 py-3">
+        <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-3">
+          <Input
+            type="search"
+            className="w-full sm:max-w-xs sm:flex-1"
+            placeholder={t("jobs.searchPlaceholder")}
+            aria-label={t("jobs.searchPlaceholder")}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
           <Select
-            className="w-44"
+            className="w-[calc(50%-0.25rem)] sm:w-44"
+            aria-label={t("common.status")}
             value={status}
-            onValueChange={setStatus}
-            options={[{ value: "all", label: t("common.all") }, ...STATUSES.map((s) => ({ value: s, label: t(`jobStatus.${s}`) }))]}
+            onValueChange={(v) => setParam("status", v, "all")}
+            options={[
+              { value: "all", label: t("jobs.allStatuses") },
+              ...STATUSES.map((s) => ({ value: s, label: t(`jobStatus.${s}`) })),
+            ]}
           />
           <Select
-            className="w-56"
+            className="w-[calc(50%-0.25rem)] sm:w-56"
+            aria-label={t("jobs.step")}
             value={step}
-            onValueChange={setStep}
-            options={[{ value: "all", label: t("common.all") }, ...STEPS.map((s) => ({ value: s, label: t(`steps.${s}`) }))]}
+            onValueChange={(v) => setParam("step", v, "all")}
+            options={[{ value: "all", label: t("jobs.allSteps") }, ...STEPS.map((s) => ({ value: s, label: t(`steps.${s}`) }))]}
           />
+          {filtered && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setSearch("");
+                setParams({}, { replace: true });
+              }}
+            >
+              <X />
+              {t("common.clearFilters")}
+            </Button>
+          )}
         </div>
         {jobs.isLoading && <Skeleton className="m-4 h-40" />}
-        {jobs.data && jobs.data.length === 0 && <EmptyState icon={<ListChecks />} title={t("jobs.empty")} />}
-        {jobs.data && jobs.data.length > 0 && (
+        {jobs.data && jobs.data.items.length === 0 && (
+          <EmptyState icon={<ListChecks />} title={filtered ? t("common.noMatch") : t("jobs.empty")} />
+        )}
+        {jobs.data && jobs.data.items.length > 0 && (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="text-left text-xs text-muted-foreground">
@@ -172,8 +228,8 @@ export default function JobsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {jobs.data.map((j) => (
-                  <tr key={j.id} className="cursor-pointer hover:bg-accent/40" onClick={() => setParams({ job: j.id })}>
+                {jobs.data.items.map((j) => (
+                  <tr key={j.id} className="cursor-pointer hover:bg-accent/40" onClick={() => setParam("job", j.id)}>
                     <td className="px-4 py-2.5 font-medium">{t(`steps.${j.step}`)}</td>
                     <td className="max-w-56 truncate px-3 py-2.5">{j.doc_name}</td>
                     <td className="px-3 py-2.5 text-muted-foreground">{j.page ?? "—"}</td>
@@ -192,8 +248,11 @@ export default function JobsPage() {
             </table>
           </div>
         )}
+        {jobs.data && (
+          <Pagination page={page} size={JOBS_PAGE} total={jobs.data.total} onPage={(p) => setParam("page", String(p), "1")} />
+        )}
       </Card>
-      {open && <JobDialog jobId={open} onClose={() => setParams({})} />}
+      {open && <JobDialog jobId={open} onClose={() => setParam("job", "")} />}
     </>
   );
 }

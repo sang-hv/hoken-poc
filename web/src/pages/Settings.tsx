@@ -437,13 +437,27 @@ function PipelineTab() {
       </div>
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
         {Object.entries(opts).map(([section, values]) => (
-          <Card key={section} className={section === "chunk" || section === "cu" ? "xl:col-span-2" : ""}>
+          <Card key={section} className={section === "chunk" || section === "cu" || section === "chat" ? "xl:col-span-2" : ""}>
             <CardHeader>
               <CardTitle>{t(`settings.sections.${section}`, { defaultValue: section })}</CardTitle>
               {section === "routing" && <CardDescription>{t("routing.desc")}</CardDescription>}
             </CardHeader>
-            <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              {Object.entries(values).map(([k, v]) => control(section, k, v))}
+            <CardContent className="flex flex-col gap-4">
+              {/* Công tắc một nhóm, ô nhập một nhóm: Field là subgrid 3 hàng nên không xếp xen kẽ với công tắc */}
+              {Object.values(values).some((v) => typeof v === "boolean") && (
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  {Object.entries(values)
+                    .filter(([, v]) => typeof v === "boolean")
+                    .map(([k, v]) => control(section, k, v))}
+                </div>
+              )}
+              {Object.values(values).some((v) => typeof v !== "boolean") && (
+                <div className="grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2">
+                  {Object.entries(values)
+                    .filter(([, v]) => typeof v !== "boolean")
+                    .map(([k, v]) => control(section, k, v))}
+                </div>
+              )}
             </CardContent>
           </Card>
         ))}

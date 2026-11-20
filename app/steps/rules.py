@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from collections import Counter
 from dataclasses import dataclass, field
+from typing import Any
 
 from app.domain.models import Page
 from app.domain.options import ChunkOptions, RoutingOptions, StitchOptions
@@ -327,3 +328,94 @@ def rule_score(violations: list[str]) -> float:
     hard = sum(1 for c in violations if c not in SOFT)
     soft = len(violations) - hard
     return round(max(0.0, 1.0 - 0.3 * hard - 0.1 * soft), 3)
+
+
+# ================================================================== vùng confidence thấp (viền đỏ ở màn review)
+# Gom chữ của Content Understanding và phần tử của Docling về một dạng chung:
+# {source, label, bbox[x0,y0,x1,y1] top-left 0..1, confidence, text, span}. Toạ độ CU
+# (`source: "D(trang,x1,y1,...,x4,y4)"`) theo đơn vị của trang (inch với PDF) → chia width/height ra 0..1.
+
+_SOURCE = re.compile(r"D\((\d+),([^)]*)\)")
+
+
+def parse_cu_source(source: str) -> list[tuple[int, list[float]]]:
+    """'D(1,x1,y1,...,x4,y4);D(...)' → [(trang, [x1, y1, ..., x4, y4])]. Bỏ qua phần không đúng dạng."""
+    out = []
+    for m in _SOURCE.finditer(source or ""):
+        try:
+            nums = [float(x) for x in m.group(2).split(",")]
+        except ValueError:
+            continue
+        if len(nums) >= 4 and len(nums) % 2 == 0:
+            out.append((int(m.group(1)), nums))
+    return out
+
+
+def _bbox(points: list[float], w: float, h: float) -> list[float]:
+    xs, ys = points[0::2], points[1::2]
+    clamp = lambda v: round(min(1.0, max(0.0, v)), 4)  # noqa: E731
+    return [clamp(min(xs) / w), clamp(min(ys) / h), clamp(max(xs) / w), clamp(max(ys) / h)]
+
+
+def _span(word: dict) -> list[int] | None:
+    sp = word.get("span") or (word.get("spans") or [None])[0]
+    if isinstance(sp, dict) and "offset" in sp and "length" in sp:
+        return [int(sp["offset"]), int(sp["length"])]
+    return None
+
+
+def cu_low_words(raw: dict[str, Any], threshold: float) -> list[dict]:
+    """Chữ trong kết quả CU (prebuilt-layout) có confidence < threshold. `span` trỏ vào markdown của CU."""
+    contents = ((raw or {}).get("result") or {}).get("contents") or []
+    out: list[dict] = []
+    for content in contents:
+        for pg in content.get("pages") or []:
+            w, h = float(pg.get("width") or 0), float(pg.get("height") or 0)
+            if w <= 0 or h <= 0:
+                continue
+            for word in pg.get("words") or []:
+                conf = word.get("confidence")
+                if conf is None or float(conf) >= threshold:
+                    continue
+                polys = parse_cu_source(word.get("source", ""))
+                if not polys:
+                    continue
+                out.append(
+                    {
+                        "source": "cu",
+                        "label": "word",
+                        "text": str(word.get("content", "")),
+                        "confidence": round(float(conf), 3),
+                        "bbox": _bbox(polys[0][1], w, h),
+                        "span": _span(word),
+                    }
+                )
+    return out
+
+
+def docling_low_elements(elements: list[dict], threshold: float) -> list[dict]:
+    """Phần tử Docling (vùng layout, ô chữ OCR) có confidence < threshold. Phần tử đã loại (logo...) bỏ qua."""
+    out = []
+    for el in elements or []:
+        conf = el.get("confidence")
+        if conf is None or el.get("removed") or float(conf) >= threshold:
+            continue
+        out.append(
+            {
+                "source": "docling",
+                "label": el.get("label", ""),
+                "text": el.get("text", ""),
+                "confidence": round(float(conf), 3),
+                "bbox": el["bbox"],
+                "span": None,
+            }
+        )
+    return out
+
+
+def low_confidence_boxes(docling_meta: dict | None, cu_raw: dict | None, threshold: float) -> list[dict]:
+    """Ghép hai nguồn, thấp nhất lên trước để reviewer xem chỗ đáng ngờ nhất trước."""
+    boxes = docling_low_elements((docling_meta or {}).get("elements", []), threshold) + cu_low_words(
+        cu_raw or {}, threshold
+    )
+    return sorted(boxes, key=lambda b: b["confidence"])
