@@ -18,7 +18,9 @@ Menu: **運用** ダッシュボード · 文書 — **テスト** チャット 
    - **テキスト (Văn bản)**: Markdown sau xử lý, từng trang có nhãn `p.N`.
    - **チャンク (Chunk — cấp tài liệu)** `?tab=chunks&chunk=<id>`: toàn bộ chunk theo thứ tự; chunk có thể trải
      nhiều trang (cắt theo mã mục trên văn bản đã nối trang) → hiện dải trang PDF + trang sách, 「Nページにまたがる」,
-     ⚠ khi trang của chunk còn điểm yếu. Sửa / tách tại con trỏ / gộp với chunk sau; tài liệu tự chạy → lưu xong tự
+     ⚠ khi trang của chunk còn điểm yếu. Popup 「原本と比較」: trái nội dung chunk, phải các trang gốc xếp dọc, khung
+     xanh quanh phần tử thuộc chunk (nét đứt = một phần; `GET /documents/{doc}/chunks/{id}/regions`). Sửa / tách tại
+     con trỏ / gộp với chunk sau; tài liệu tự chạy → lưu xong tự
      duyệt + index lại. Panel チャンク trong 検査 giữ để xem chunk liên quan trang đang xem (nhãn 「このページから」
      「前ページから続く」「次ページへ続く」, nút mở trong tab này).
    - **インサイト (Nhận định)**: tóm tắt + ý chính do LLM tạo (nút tạo lại).

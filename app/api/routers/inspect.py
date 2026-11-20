@@ -17,7 +17,7 @@ from app.services.container import Container
 
 router = APIRouter(prefix="/api/documents", tags=["inspect"])
 
-NOT_FOUND = {"doc_not_found", "page_not_found", "element_not_found"}
+NOT_FOUND = {"chunk_not_found", "doc_not_found", "page_not_found", "element_not_found"}
 
 
 def _call(fn: Callable[..., Any], *args, **kwargs) -> Any:
@@ -160,6 +160,12 @@ def reread_element(
 @router.post("/{doc_id}/pages/{page}/elements/{eid}/accept")
 def accept_element(doc_id: str, page: int, eid: str, c: Container = Depends(container), user: User = Depends(reviewer)):
     return _call(svc.accept_element, c, doc_id, page, eid, user.email)
+
+
+@router.get("/{doc_id}/chunks/{chunk_id}/regions")
+def chunk_regions(doc_id: str, chunk_id: str, c: Container = Depends(container), _: User = Depends(viewer)):
+    """Trang của chunk + phần tử thuộc chunk (coverage 0..1) để tô vùng trên ảnh trang."""
+    return _call(svc.chunk_regions, c, doc_id, chunk_id)
 
 
 @router.get("/{doc_id}/pages/{page}/chunks")

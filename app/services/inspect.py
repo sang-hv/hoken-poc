@@ -837,6 +837,41 @@ def generate_insights(c: Container, doc_id: str, actor: str) -> dict:
     return out
 
 
+def chunk_regions(c: Container, doc_id: str, chunk_id: str) -> dict:
+    """Các trang PDF của chunk + phần tử thuộc chunk trên từng trang (để tô vùng khi so chunk với bản gốc)."""
+    doc = _doc(c, doc_id)
+    ch = c.repo.get_chunk(doc_id, chunk_id)
+    if not ch:
+        raise InspectError("chunk_not_found")
+    out = []
+    for book in range(ch.page_from, ch.page_to + 1):
+        n = book - doc.book_page_start + doc.page_from
+        p = c.repo.get_page(doc_id, n)
+        if not p or p.status not in READY:
+            continue
+        state = load_state(c, doc, p)
+        cover = rules.chunk_coverage(ch.text, state["elements"])
+        out.append(
+            {
+                "page": n,
+                "book_page": book,
+                "image_size": state.get("image_size"),
+                "elements": [
+                    {
+                        "id": e["id"],
+                        "order": e["order"],
+                        "label": e["label"],
+                        "bbox": e["bbox"],
+                        "coverage": cover[e["id"]],
+                    }
+                    for e in state["elements"]
+                    if e["id"] in cover
+                ],
+            }
+        )
+    return {"chunk_id": ch.id, "pages": out}
+
+
 def page_chunks(c: Container, doc_id: str, n: int) -> list[dict]:
     """Chunk phủ trang PDF n (chunk lưu trang SÁCH → đổi bằng doc.book_page)."""
     doc = _doc(c, doc_id)

@@ -121,3 +121,14 @@ export interface HistoryItem {
   element_id: string;
   summary: string; // vd "v3 · stitched" hoặc "e4 · 0.62 → manual"
 }
+
+/** GET /documents/{doc}/chunks/{chunk}/regions — phần tử thuộc chunk trên từng trang PDF (tô vùng). */
+export interface ChunkRegions {
+  chunk_id: string;
+  pages: {
+    page: number;
+    book_page: number;
+    image_size: [number, number] | null;
+    elements: { id: string; order: number; label: ElementLabel; bbox: [number, number, number, number]; coverage: number }[];
+  }[];
+}

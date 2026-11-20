@@ -5,13 +5,13 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
   Check,
+  Columns2,
   FileText,
   Layers,
   Loader2,
   Merge,
   Pencil,
   Save,
-  ScanText,
   Scissors,
   Search,
   Undo2,
@@ -27,6 +27,7 @@ import { api } from "@/lib/api";
 import { useDebounced } from "@/lib/hooks";
 import type { Chunk, Doc } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { ChunkCompareDialog } from "./ChunkCompareDialog";
 import { QueryError, type ViewerTab, bookToPdf, useDocChunks, useDocMeta, useQuality, vk } from "./shared";
 
 type Filter = "all" | "issues";
@@ -63,6 +64,8 @@ export function ChunksTab({
   const [form, setForm] = useState({ text: "", item_code: "", title: "" });
   const [busy, setBusy] = useState<string | null>(null);
   const textRef = useRef<HTMLTextAreaElement>(null);
+  /** Popup 原本と比較 đang mở ở trang PDF này (null = đóng) */
+  const [compare, setCompare] = useState<number | null>(null);
   const listRef = useRef<HTMLUListElement>(null);
 
   const d = doc.data;
@@ -214,6 +217,19 @@ export function ChunksTab({
         )}
       </aside>
 
+      {active && (
+        <ChunkCompareDialog
+          docId={docId}
+          chunk={active}
+          open={compare !== null}
+          onOpenChange={(o) => !o && setCompare(null)}
+          startPage={compare}
+          onInspect={(p) => {
+            setCompare(null);
+            onGo("inspect", p);
+          }}
+        />
+      )}
       {/* ------------------------------------------------ chi tiết */}
       <section className="min-h-0 overflow-y-auto">
         {active && (
@@ -310,26 +326,22 @@ export function ChunksTab({
               {pb > pa && <Badge tone="violet">{t("viewer.chunkTab.span", { n: pb - pa + 1 })}</Badge>}
               <span className="flex-1" />
               {Array.from({ length: pb - pa + 1 }, (_, i) => pa + i).map((p) => (
-                <span key={p} className="flex items-center gap-1">
-                  <Tip content={t("viewer.chunkTab.openOriginal", { page: p })}>
-                    <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => onGo("original", p)}>
-                      <FileText />
-                      p.{p}
-                    </Button>
-                  </Tip>
-                  <Tip content={t("viewer.chunkTab.openInspect", { page: p })}>
-                    <Button
-                      variant="ghost"
-                      size="iconSm"
-                      className={cn(weakPages.has(p) && "text-warning")}
-                      aria-label={t("viewer.chunkTab.openInspect", { page: p })}
-                      onClick={() => onGo("inspect", p)}
-                    >
-                      {weakPages.has(p) ? <AlertTriangle /> : <ScanText />}
-                    </Button>
-                  </Tip>
-                </span>
+                <Tip key={p} content={t("viewer.chunkTab.comparePage", { page: p })}>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className={cn("h-7 px-2", weakPages.has(p) && "text-warning")}
+                    onClick={() => setCompare(p)}
+                  >
+                    {weakPages.has(p) ? <AlertTriangle /> : <FileText />}
+                    p.{p}
+                  </Button>
+                </Tip>
               ))}
+              <Button variant="soft" size="sm" className="h-7" onClick={() => setCompare(pa)}>
+                <Columns2 />
+                {t("viewer.compare.title")}
+              </Button>
             </div>
 
             {activeWeak.length > 0 && (

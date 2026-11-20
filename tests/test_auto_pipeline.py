@@ -277,3 +277,30 @@ def test_element_edit_keeps_human_chunk_edits_elsewhere(container, sample_pdf):
     codes = [e.code for e in c.repo.recent_events(doc.id, limit=1000)]
     assert "chunk.partial" in codes
     assert c.config.overrides["search"].count() == len(after)
+
+
+def test_chunk_coverage_and_regions(client, container, sample_pdf):
+    from app.steps import rules
+
+    els = [
+        {"id": "e1", "label": "page_header", "text": "Dental fee schedule header"},
+        {"id": "e2", "label": "section_header", "text": "## M016 Metal crown"},
+        {"id": "e3", "label": "text", "text": "Metal crowns are calculated\nper tooth 800 points."},
+        {"id": "e4", "label": "text", "text": "However the exception applies\nto something else entirely here"},
+        {"id": "e5", "label": "page_footer", "text": "2"},
+    ]
+    cov = rules.chunk_coverage(
+        "M016 Metal crown\nMetal crowns are calculated per tooth 800 points.\nHowever the exception applies", els
+    )
+    assert cov["e2"] == 1.0 and cov["e3"] == 1.0 and 0.3 <= cov["e4"] < 0.8 and "e1" not in cov and "e5" not in cov
+
+    c = container
+    _search_ready(c)
+    r = client.post("/api/documents", files={"file": ("s.pdf", sample_pdf, "application/pdf")}, headers=H)
+    doc_id = r.json()["id"]
+    drain(c)
+    m15 = next(x for x in c.repo.list_chunks(doc_id) if x.item_code == "M015-2")
+    reg = client.get(f"/api/documents/{doc_id}/chunks/{m15.id}/regions").json()
+    assert [p["page"] for p in reg["pages"]] == list(range(m15.page_from, m15.page_to + 1))
+    assert reg["pages"][0]["elements"] and all(e["coverage"] >= rules.COVER_PART for e in reg["pages"][0]["elements"])
+    assert client.get(f"/api/documents/{doc_id}/chunks/nope/regions").status_code == 404

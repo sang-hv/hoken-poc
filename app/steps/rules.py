@@ -634,3 +634,27 @@ def partial_plan(
                 aff |= set(secs) & new
                 grew = True
     return aff, drop
+
+
+# ================================================================== chunk ↔ phần tử (tô vùng trên ảnh trang)
+COVER_FULL = 0.8  # ≥ mức này: phần tử nằm trong chunk
+COVER_PART = 0.3  # ≥ mức này: một phần phần tử nằm trong chunk (chunk tách giữa phần tử)
+
+
+def chunk_coverage(chunk_text: str, elements: list[dict]) -> dict[str, float]:
+    """Tỉ lệ nội dung của từng phần tử có trong chunk (0..1), theo từng dòng đã chuẩn hoá (bỏ ký hiệu Markdown,
+    khoảng trắng — chunk được nối từ nhiều trang / dòng nên so theo dòng con). Bỏ header/footer và dòng < 2 ký
+    tự (số trang, "1"…) để không khớp nhầm. Chỉ trả phần tử ≥ COVER_PART. Hàm thuần."""
+    hay = norm_text(chunk_text)
+    out: dict[str, float] = {}
+    for e in elements:
+        if e.get("label") in HEADER_FOOTER:
+            continue
+        lines = [x for x in (norm_text(ln) for ln in (e.get("text") or "").split("\n")) if len(x) >= 2]
+        total = sum(len(x) for x in lines)
+        if not total:
+            continue
+        r = sum(len(x) for x in lines if x in hay) / total
+        if r >= COVER_PART:
+            out[e["id"]] = round(r, 3)
+    return out
