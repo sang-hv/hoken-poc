@@ -322,10 +322,12 @@ def test_approve_all_goes_straight_to_next_step(client, container, sample_pdf):
     drain(c)
     assert c.repo.get_doc(doc_id).status == DocStatus.ocr_review
     # sai bước → 409
-    r = client.post(f"/api/documents/{doc_id}/actions/approve_all_chunks", headers=H)
+    r = client.post(f"/api/documents/{doc_id}/actions/approve_all_chunks", json={"confirm": True}, headers=H)
     assert r.status_code == 409 and r.json()["detail"]["code"] == "doc_not_in_chunk_review"
 
     r = client.post(f"/api/documents/{doc_id}/actions/approve_all_pages", headers=H)
+    assert r.status_code == 400 and r.json()["detail"]["code"] == "confirm_required"  # thiếu xác nhận
+    r = client.post(f"/api/documents/{doc_id}/actions/approve_all_pages", json={"confirm": True}, headers=H)
     assert r.status_code == 200, r.text
     assert all(
         p.status == PageStatus.approved and p.reviewed_by == "admin@example.com" for p in c.repo.list_pages(doc_id)
@@ -333,7 +335,7 @@ def test_approve_all_goes_straight_to_next_step(client, container, sample_pdf):
     drain(c)
     assert c.repo.get_doc(doc_id).status == DocStatus.chunk_review
 
-    r = client.post(f"/api/documents/{doc_id}/actions/approve_all_chunks", headers=H)
+    r = client.post(f"/api/documents/{doc_id}/actions/approve_all_chunks", json={"confirm": True}, headers=H)
     assert r.status_code == 200, r.text
     drain(c)
     assert c.repo.get_doc(doc_id).status == DocStatus.indexed
@@ -368,7 +370,10 @@ def test_warn_mode_holds_at_reviews_only_when_there_are_warnings(client, contain
 
     # すべて承認 → chunk; ép một chunk vi phạm luật để dừng ở チャンクレビュー
     monkeypatch.setattr(pl, "chunk_flagged", lambda c_, ch: ch.seq == 1)
-    assert client.post(f"/api/documents/{doc_id}/actions/approve_all_pages", headers=H).status_code == 200
+    assert (
+        client.post(f"/api/documents/{doc_id}/actions/approve_all_pages", json={"confirm": True}, headers=H).status_code
+        == 200
+    )
     assert c.repo.get_doc(doc_id).review_hold == ""
     drain(c)
     doc = c.repo.get_doc(doc_id)
@@ -387,7 +392,12 @@ def test_warn_mode_holds_at_reviews_only_when_there_are_warnings(client, contain
         actor="u1",
     )
     assert c.repo.get_doc(doc_id).status == DocStatus.chunk_review
-    assert client.post(f"/api/documents/{doc_id}/actions/approve_all_chunks", headers=H).status_code == 200
+    assert (
+        client.post(
+            f"/api/documents/{doc_id}/actions/approve_all_chunks", json={"confirm": True}, headers=H
+        ).status_code
+        == 200
+    )
     drain(c)
     doc = c.repo.get_doc(doc_id)
     assert doc.status == DocStatus.indexed and doc.review_hold == ""

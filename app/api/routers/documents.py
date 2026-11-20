@@ -102,9 +102,21 @@ def source_pdf(doc_id: str, c: Container = Depends(container), _: User = Depends
     return Response(c.blob.get(k_source(doc_id)), media_type="application/pdf")
 
 
+class ActionIn(BaseModel):
+    confirm: bool = False  # bắt buộc với approve_all_* (duyệt hết mà không review — người dùng đã xác nhận 2 lần)
+
+
 @router.post("/{doc_id}/actions/{action}")
-def action(doc_id: str, action: str, c: Container = Depends(container), user: User = Depends(reviewer)):
+def action(
+    doc_id: str,
+    action: str,
+    body: ActionIn | None = None,
+    c: Container = Depends(container),
+    user: User = Depends(reviewer),
+):
     _doc(c, doc_id)
+    if action.startswith("approve_all_") and not (body and body.confirm):
+        raise HTTPException(400, {"code": "confirm_required"})
     from app.services.jobs import enqueue
 
     if action == "start_chunking":

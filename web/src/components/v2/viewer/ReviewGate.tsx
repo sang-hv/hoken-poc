@@ -9,7 +9,7 @@ import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { useToastError } from "@/components/common";
-import { Button, Dialog } from "@/components/ui";
+import { Button, Checkbox, Dialog } from "@/components/ui";
 import { api } from "@/lib/api";
 import type { Doc } from "@/lib/types";
 import type { DocQuality } from "@/lib/v2types";
@@ -55,7 +55,8 @@ function useApproveAll(doc: Doc, onDone: () => void) {
   const act = async (name: string, ok: string) => {
     setBusy(name);
     try {
-      await api.post(`/documents/${doc.id}/actions/${name}`);
+      // すべて承認 phải gửi confirm: true (backend từ chối nếu thiếu — chống gọi nhầm)
+      await api.post(`/documents/${doc.id}/actions/${name}`, name.startsWith("approve_all") ? { confirm: true } : undefined);
       toast.success(ok);
       onDone();
       qc.invalidateQueries({ queryKey: ["document", doc.id] });
@@ -74,7 +75,9 @@ function useApproveAll(doc: Doc, onDone: () => void) {
   return { busy, act, approveAll };
 }
 
-/** Popup: số cảnh báo + 「レビューする」 / 「すべて承認して次へ」. `onReview` không truyền = chỉ xác nhận すべて承認. */
+/** Popup review. Bước 1 (`onReview` có): số cảnh báo + 「レビューする」 (nút chính) / 「すべて承認…」. Bước 2 (xác nhận
+ *  lần nữa — duyệt mà không review là nguy hiểm): số trang/chunk chưa review + cảnh báo, phải tích 「理解しました」
+ *  mới bấm được 「すべて承認する」. Không truyền `onReview` (banner) → vào thẳng bước 2. */
 function ReviewDialog({
   doc,
   stage,
@@ -95,42 +98,78 @@ function ReviewDialog({
     queryFn: () => api.get<DocQuality>(`/documents/${doc.id}/quality`),
     enabled: open && stage === "ocr",
   });
+  const [step, setStep] = useState<"choose" | "confirm">(onReview ? "choose" : "confirm");
+  const [ack, setAck] = useState(false);
+  useEffect(() => {
+    if (open) {
+      setStep(onReview ? "choose" : "confirm");
+      setAck(false);
+    }
+  }, [open, onReview]);
   const c = counts(doc, stage);
   const warnings = stage === "ocr" ? quality.data?.weak_open : doc.stats.chunks_flagged;
   const held = reviewMode(doc) === "warn";
+  const ocr = stage === "ocr";
+
+  if (step === "choose")
+    return (
+      <Dialog
+        open={open}
+        onOpenChange={onOpenChange}
+        className="max-w-xl"
+        title={ocr ? t("viewer.gate.promptOcrTitle") : t("viewer.gate.promptChunkTitle")}
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => onOpenChange(false)}>
+              {t("viewer.gate.later")}
+            </Button>
+            <Button variant="outline" disabled={c.left <= 0} onClick={() => setStep("confirm")}>
+              <CheckCheck />
+              {t("viewer.gate.approveAllEllipsis")}
+            </Button>
+            <Button
+              onClick={() => {
+                onOpenChange(false);
+                onReview?.();
+              }}
+            >
+              {ocr ? <UserCheck /> : <ListChecks />}
+              {ocr ? t("viewer.gate.reviewPages") : t("viewer.gate.reviewChunks")}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-2 text-sm leading-relaxed">
+          <p>
+            {held
+              ? ocr
+                ? t("viewer.gate.heldOcr", { n: warnings ?? "…" })
+                : t("viewer.gate.heldChunk", { n: warnings ?? "…" })
+              : ocr
+                ? t("viewer.gate.manualOcr")
+                : t("viewer.gate.manualChunk")}
+          </p>
+          <p className="text-muted-foreground">
+            {ocr
+              ? t("viewer.gate.ocrProgress", { n: c.done, total: c.total })
+              : t("viewer.gate.chunkProgress", { n: c.done, total: c.total })}
+          </p>
+        </div>
+      </Dialog>
+    );
 
   return (
     <Dialog
       open={open}
       onOpenChange={onOpenChange}
-      className={onReview ? "max-w-xl" : undefined}
-      title={
-        onReview
-          ? stage === "ocr"
-            ? t("viewer.gate.promptOcrTitle")
-            : t("viewer.gate.promptChunkTitle")
-          : stage === "ocr"
-            ? t("viewer.gate.approveAllOcrTitle")
-            : t("viewer.gate.approveAllChunkTitle")
-      }
+      className="max-w-xl"
+      title={ocr ? t("viewer.gate.approveAllOcrTitle") : t("viewer.gate.approveAllChunkTitle")}
       footer={
         <>
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>
-            {onReview ? t("viewer.gate.later") : t("common.cancel")}
+          <Button variant="ghost" onClick={() => (onReview ? setStep("choose") : onOpenChange(false))}>
+            {onReview ? t("viewer.gate.back") : t("common.cancel")}
           </Button>
-          {onReview && (
-            <Button
-              variant="outline"
-              onClick={() => {
-                onOpenChange(false);
-                onReview();
-              }}
-            >
-              {stage === "ocr" ? <UserCheck /> : <ListChecks />}
-              {stage === "ocr" ? t("viewer.gate.reviewPages") : t("viewer.gate.reviewChunks")}
-            </Button>
-          )}
-          <Button loading={busy !== null} disabled={c.left <= 0} onClick={() => approveAll(stage)}>
+          <Button variant="danger" loading={busy !== null} disabled={!ack || c.left <= 0} onClick={() => approveAll(stage)}>
             <CheckCheck />
             {t("viewer.gate.approveAllConfirm")}
           </Button>
@@ -138,31 +177,25 @@ function ReviewDialog({
       }
     >
       <div className="space-y-3 text-sm leading-relaxed">
-        {onReview && (
-          <p>
-            {held
-              ? stage === "ocr"
-                ? t("viewer.gate.heldOcr", { n: warnings ?? "…" })
-                : t("viewer.gate.heldChunk", { n: warnings ?? "…" })
-              : stage === "ocr"
-                ? t("viewer.gate.manualOcr")
-                : t("viewer.gate.manualChunk")}
-          </p>
-        )}
-        <div className="flex gap-3 rounded-lg border border-warning/40 bg-warning-soft/60 p-3">
-          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
+        <div className="flex gap-3 rounded-lg border border-danger/40 bg-danger-soft p-3">
+          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-danger" aria-hidden />
           <div className="space-y-1.5">
-            <p className="font-medium">
-              {stage === "ocr"
-                ? t("viewer.gate.approveAllOcrBody", { n: c.left })
-                : t("viewer.gate.approveAllChunkBody", { n: c.left })}
+            <p className="font-semibold text-danger">
+              {ocr ? t("viewer.gate.approveAllOcrBody", { n: c.left }) : t("viewer.gate.approveAllChunkBody", { n: c.left })}
             </p>
-            <p className="text-muted-foreground">
-              {stage === "ocr" ? t("viewer.gate.approveAllOcrRisk") : t("viewer.gate.approveAllChunkRisk")}
-            </p>
+            {warnings !== undefined && warnings > 0 && (
+              <p className="font-medium">
+                {ocr ? t("viewer.gate.warnOcr", { n: warnings }) : t("viewer.gate.warnChunk", { n: warnings })}
+              </p>
+            )}
+            <p className="text-muted-foreground">{ocr ? t("viewer.gate.approveAllOcrRisk") : t("viewer.gate.approveAllChunkRisk")}</p>
             <p className="text-xs text-muted-foreground">{t("viewer.gate.recorded")}</p>
           </div>
         </div>
+        <label className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-border px-3 py-2.5">
+          <Checkbox checked={ack} onCheckedChange={(v) => setAck(v === true)} className="mt-0.5" />
+          <span className="font-medium">{ocr ? t("viewer.gate.ackOcr") : t("viewer.gate.ackChunk")}</span>
+        </label>
       </div>
     </Dialog>
   );
@@ -185,9 +218,11 @@ export function ReviewPrompt({
   const nav = useNavigate();
   const stage = reviewStage(doc);
   const [open, setOpen] = useState(false);
+  // Đã duyệt hết (chỉ còn bấm bước sau — banner có nút) → không cần popup
+  const pending = !!doc && !!stage && counts(doc, stage).left > 0;
   useEffect(() => {
-    setOpen(!!doc && !!stage && canEdit && onPipeline);
-  }, [doc?.id, stage, canEdit, onPipeline]); // eslint-disable-line react-hooks/exhaustive-deps
+    setOpen(pending && canEdit && onPipeline);
+  }, [doc?.id, stage, pending, canEdit, onPipeline]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!doc || !stage) return null;
   return (
     <ReviewDialog

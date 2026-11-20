@@ -241,6 +241,7 @@ const en = {
     chunk_not_found: "Chunk not found",
     doc_not_in_ocr_review: "This document is not waiting for OCR review",
     pages_not_ready: "Some pages are still processing or failed",
+    confirm_required: "Please confirm before approving everything",
     doc_not_in_chunk_review: "Document is not in chunk review",
     merge_needs_two: "Select at least two chunks",
     merge_not_adjacent: "Only adjacent chunks can be merged",

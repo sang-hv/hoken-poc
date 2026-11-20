@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { NavLink, Outlet, useLocation } from "react-router-dom";
+import { NavLink, Outlet, useLocation, useMatch, useResolvedPath } from "react-router-dom";
 import { LANGS } from "@/i18n";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
@@ -63,21 +63,22 @@ function NavItem({
   also?: RegExp;
 }) {
   const loc = useLocation();
-  const alsoActive = !!also && also.test(loc.pathname);
+  // Tự tính active và truyền className dạng CHUỖI: khi thu gọn, Tooltip (Radix Slot) gộp className kiểu chuỗi —
+  // className dạng hàm của NavLink sẽ bị mất (icon lệch, không có nền active).
+  const resolved = useResolvedPath(to);
+  const matched = !!useMatch({ path: resolved.pathname, end: !!end });
+  const active = matched || (!!also && also.test(loc.pathname));
   const link = (
     <NavLink
       to={to}
       end={end}
       aria-label={collapsed ? label : undefined}
-      className={({ isActive }) =>
-        cn(
-          "flex items-center gap-3 rounded-lg py-2 text-sm font-medium transition [&_svg]:size-[18px] [&_svg]:shrink-0",
-          collapsed ? "justify-center px-0" : "px-3",
-          isActive || alsoActive
-            ? "bg-primary-soft text-primary"
-            : "text-muted-foreground hover:bg-accent hover:text-foreground",
-        )
-      }
+      aria-current={active ? "page" : undefined}
+      className={cn(
+        "flex items-center gap-3 rounded-lg py-2 text-sm font-medium transition [&_svg]:size-[18px] [&_svg]:shrink-0",
+        collapsed ? "mx-auto size-10 justify-center px-0" : "px-3",
+        active ? "bg-primary-soft text-primary" : "text-muted-foreground hover:bg-accent hover:text-foreground",
+      )}
     >
       {icon}
       {!collapsed && <span className="truncate">{label}</span>}

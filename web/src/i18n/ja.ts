@@ -242,6 +242,7 @@ const ja: Messages = {
     chunk_not_found: "チャンクが見つかりません",
     doc_not_in_ocr_review: "この文書は OCR レビュー中ではありません",
     pages_not_ready: "処理中または失敗したページがあります",
+    confirm_required: "すべて承認する前に確認が必要です",
     doc_not_in_chunk_review: "この文書はチャンクレビュー中ではありません",
     merge_needs_two: "2つ以上のチャンクを選択してください",
     merge_not_adjacent: "隣り合うチャンクのみ結合できます",
