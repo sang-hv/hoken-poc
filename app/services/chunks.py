@@ -6,7 +6,7 @@ from app.domain.models import Chunk, ChunkStatus, DocStatus
 from app.domain.options import ChunkOptions
 from app.services.container import Container
 from app.services.jobs import emit
-from app.services.pipeline import PipelineError, refresh_doc
+from app.services.pipeline import PipelineError, refresh_doc, start_index
 from app.steps import rules
 
 
@@ -38,6 +38,24 @@ def _back_to_review(c: Container, doc) -> None:
         refresh_doc(c, doc)
 
 
+def _after_edit(c: Container, doc, actor: str) -> None:
+    """Sau khi sửa / gộp / tách chunk. Duyệt tay: quay lại chunk_review chờ duyệt. Tự chạy (auto_review): người sửa
+    coi như đã duyệt → duyệt luôn chunk vừa đổi rồi index lại, chat dùng được nội dung mới ngay."""
+    if not doc.auto_review:
+        _back_to_review(c, doc)
+        return
+    for x in c.repo.list_chunks(doc.id):
+        if x.status == ChunkStatus.draft:
+            x.status = ChunkStatus.approved
+            c.repo.save_chunk(x)
+    refresh_doc(c, doc, DocStatus.chunk_review)
+    emit(c, doc.id, "auto.reindex", by=actor)
+    try:
+        start_index(c, doc.id, actor)
+    except PipelineError as e:  # chưa cấu hình embedding/search → để chunk_review, bấm index sau
+        emit(c, doc.id, "job.blocked", "warn", step="index", reason=e.code)
+
+
 def update_chunk(
     c: Container,
     doc_id: str,
@@ -63,7 +81,7 @@ def update_chunk(
     _recheck(ch, c.config.pipeline()[1].chunk)
     c.repo.save_chunk(ch)
     emit(c, doc_id, "chunk.edited", chunk=chunk_id, by=actor)
-    _back_to_review(c, doc)
+    _after_edit(c, doc, actor)
     return ch
 
 
@@ -96,7 +114,7 @@ def merge_chunks(c: Container, doc_id: str, ids: list[str], actor: str) -> Chunk
         c.repo.delete_chunk(doc_id, x.id)
     _resequence(c, doc_id)
     emit(c, doc_id, "chunk.merged", chunks=len(sel), by=actor)
-    _back_to_review(c, doc)
+    _after_edit(c, doc, actor)
     return first
 
 
@@ -130,7 +148,7 @@ def split_chunk(c: Container, doc_id: str, chunk_id: str, offset: int, actor: st
     c.repo.save_chunk(_recheck(ch, opts))
     c.repo.save_chunk(_recheck(second, opts))
     emit(c, doc_id, "chunk.split", chunk=chunk_id, by=actor)
-    _back_to_review(c, doc)
+    _after_edit(c, doc, actor)
     return [ch, second]
 
 

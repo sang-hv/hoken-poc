@@ -1,4 +1,4 @@
-import { ChevronLeft, Download, ExternalLink, FileImage, FileText, MoreHorizontal, ScanText, Workflow } from "lucide-react";
+import { ChevronLeft, Download, ExternalLink, FileImage, FileText, Layers, MoreHorizontal, ScanText, Workflow } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import {
@@ -82,11 +82,12 @@ export function TopBar({
             tabIndex={tab === k ? 0 : -1}
             onClick={() => onTab(k)}
             className={cn(
-              "flex cursor-pointer items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm font-medium transition sm:px-4",
+              "flex cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-md px-2 py-1.5 text-sm font-medium transition sm:px-3.5",
               tab === k ? "bg-card text-foreground shadow-card" : "text-muted-foreground hover:text-foreground",
             )}
           >
             {k === "pipeline" && <Workflow className="size-4" aria-hidden />}
+            {k === "chunks" && <Layers className="size-4" aria-hidden />}
             {k === "inspect" && <ScanText className="size-4" aria-hidden />}
             {t(`viewer.tabs.${k}`)}
           </button>

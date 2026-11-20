@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { EmptyState, buttonVariants } from "@/components/ui";
+import { ChunksTab } from "@/components/v2/viewer/ChunksTab";
 import { InsightsTab } from "@/components/v2/viewer/InsightsTab";
 import { InspectTab } from "@/components/v2/viewer/InspectTab";
 import { PipelineTab } from "@/components/v2/viewer/PipelineTab";
@@ -69,6 +70,33 @@ export default function DocumentViewerPage() {
       (prev) => {
         const next = new URLSearchParams(prev);
         next.set("tab", k);
+        return next;
+      },
+      { replace: true },
+    );
+  }, []);
+
+  /** Chunk đang chọn ở tab チャンク (?chunk=) */
+  const chunkId = params.get("chunk");
+  const onChunk = useCallback((id: string) => {
+    setRef.current(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.set("tab", "chunks");
+        next.set("chunk", id);
+        return next;
+      },
+      { replace: true },
+    );
+  }, []);
+  /** Từ tab チャンク sang 原本 / 検査 ở một trang */
+  const onGo = useCallback((k: ViewerTab, p: number) => {
+    setRef.current(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.set("tab", k);
+        if (p <= 1) next.delete("page");
+        else next.set("page", String(p));
         return next;
       },
       { replace: true },
@@ -176,10 +204,21 @@ export default function DocumentViewerPage() {
         />
       ) : tab === "text" ? (
         <TextTab docId={docId} info={info.data} infoLoading={info.isLoading} page={page} onShowInsights={showInsights} />
+      ) : tab === "chunks" ? (
+        <ChunksTab docId={docId} canEdit={canEdit} selectedId={chunkId} onSelect={onChunk} onGo={onGo} />
       ) : tab === "insights" ? (
         <InsightsTab docId={docId} canEdit={canEdit} />
       ) : (
-        <InspectTab docId={docId} total={total} page={page} onPage={onPage} canEdit={canEdit} zoom={zoom} onZoom={setZoom} />
+        <InspectTab
+          docId={docId}
+          total={total}
+          page={page}
+          onPage={onPage}
+          onOpenChunk={onChunk}
+          canEdit={canEdit}
+          zoom={zoom}
+          onZoom={setZoom}
+        />
       )}
     </div>
   );

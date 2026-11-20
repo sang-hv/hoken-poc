@@ -1,10 +1,20 @@
 /** Các tab phụ của panel 検査: チャンク (chunk của trang) · 弱点 (toàn tài liệu) · 修正履歴 (lịch sử trang). */
-import { CheckCircle2, History, Layers, ShieldCheck } from "lucide-react";
+import { ArrowRight, CheckCircle2, History, Layers, ShieldCheck } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { Badge, EmptyState, Skeleton } from "@/components/ui";
+import { Badge, Button, EmptyState, Skeleton } from "@/components/ui";
 import type { HistoryItem, WeakItem } from "@/lib/v2types";
 import { cn, fmtDateTime } from "@/lib/utils";
-import { OrderBadge, QueryError, StatusChip, WeakChip, useHistory, usePageChunks, useWeak } from "./shared";
+import {
+  OrderBadge,
+  QueryError,
+  StatusChip,
+  WeakChip,
+  bookToPdf,
+  useDocMeta,
+  useHistory,
+  usePageChunks,
+  useWeak,
+} from "./shared";
 
 function ListSkeleton() {
   return (
@@ -16,9 +26,13 @@ function ListSkeleton() {
   );
 }
 
-export function ChunksList({ docId, page }: { docId: string; page: number }) {
+/** Chunk có dính tới trang đang xem (chunk có thể trải nhiều trang): nhãn bắt đầu ở trang này / tiếp từ trang
+ *  trước / còn sang trang sau, nút mở trong tab チャンク để sửa. */
+export function ChunksList({ docId, page, onOpen }: { docId: string; page: number; onOpen: (id: string) => void }) {
   const { t } = useTranslation();
   const q = usePageChunks(docId, page);
+  const doc = useDocMeta(docId).data;
+  const toPdf = (b: number) => (doc ? bookToPdf(doc, b) : b);
   if (q.isLoading) return <ListSkeleton />;
   if (q.isError) return <QueryError error={q.error} onRetry={() => q.refetch()} />;
   const list = (q.data ?? []).slice().sort((a, b) => a.seq - b.seq);
@@ -35,11 +49,21 @@ export function ChunksList({ docId, page }: { docId: string; page: number }) {
               </Badge>
             )}
           </div>
-          <div className="mt-1 flex flex-wrap gap-x-3 text-[11px] tabular-nums text-muted-foreground">
+          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] tabular-nums text-muted-foreground">
             <span>{t("viewer.chunks.tokens", { n: Math.max(1, Math.round(c.text.length / 2)).toLocaleString() })}</span>
-            <span>{t("viewer.chunks.pages", { from: c.page_from, to: c.page_to })}</span>
+            <span>{t("viewer.chunks.pages", { from: toPdf(c.page_from), to: toPdf(c.page_to) })}</span>
+            {toPdf(c.page_from) < page ? (
+              <Badge tone="violet">{t("viewer.chunks.fromPrev")}</Badge>
+            ) : (
+              toPdf(c.page_to) > page && <Badge tone="info">{t("viewer.chunks.startsHere")}</Badge>
+            )}
+            {toPdf(c.page_to) > page && <Badge tone="violet">{t("viewer.chunks.toNext")}</Badge>}
           </div>
           <p className="mt-2 line-clamp-6 whitespace-pre-line break-words text-[13px] leading-relaxed text-foreground/90">{c.text}</p>
+          <Button variant="link" size="sm" className="mt-1 h-auto px-0 py-0.5" onClick={() => onOpen(c.id)}>
+            {t("viewer.chunks.openTab")}
+            <ArrowRight />
+          </Button>
         </li>
       ))}
     </ul>

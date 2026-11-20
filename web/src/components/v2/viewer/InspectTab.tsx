@@ -23,6 +23,7 @@ export function InspectTab({
   total,
   page,
   onPage,
+  onOpenChunk,
   canEdit,
   zoom,
   onZoom,
@@ -31,6 +32,7 @@ export function InspectTab({
   total: number;
   page: number;
   onPage: (p: number) => void;
+  onOpenChunk: (id: string) => void;
   canEdit: boolean;
   zoom: number;
   onZoom: (z: number) => void;
@@ -238,7 +240,7 @@ export function InspectTab({
               )}
             </TabsContent>
             <TabsContent value="chunks" className="min-h-0 flex-1 overflow-y-auto data-[state=inactive]:hidden">
-              <ChunksList docId={docId} page={page} />
+              <ChunksList docId={docId} page={page} onOpen={onOpenChunk} />
             </TabsContent>
             <TabsContent value="weak" className="min-h-0 flex-1 overflow-y-auto data-[state=inactive]:hidden">
               <WeakList docId={docId} onOpen={openElement} />

@@ -234,6 +234,7 @@ const ja: Messages = {
     embedding_not_configured: "埋め込みが未設定です（設定 → AI サービス）",
     search_not_configured: "検索が未設定です（設定 → AI サービス）",
     cu_not_configured: "Content Understanding が未設定です",
+    chunk_not_found: "チャンクが見つかりません",
     doc_not_in_chunk_review: "この文書はチャンクレビュー中ではありません",
     merge_needs_two: "2つ以上のチャンクを選択してください",
     merge_not_adjacent: "隣り合うチャンクのみ結合できます",

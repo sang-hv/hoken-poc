@@ -11,11 +11,16 @@ Menu: **運用** ダッシュボード · 文書 — **テスト** チャット 
 1. **文書 (Danh sách tài liệu)**: tải PDF / ảnh (PNG, JPEG → PDF 1 trang) lên → **pipeline tự chạy hết**
    (Docling → định tuyến → CU/VLM → nối trang → *tự duyệt* → chunk → *tự duyệt* → embed + index) theo
    `review.auto_review` (mặc định bật). Index xong là chat được ngay ở màn チャット.
-2. **Chi tiết tài liệu** `/documents/:docId` — 5 tab (mở 原本 nếu đã index xong, còn lại mở パイプライン):
+2. **Chi tiết tài liệu** `/documents/:docId` — 6 tab (mở 原本 nếu đã index xong, còn lại mở パイプライン):
    - **パイプライン**: tiến độ 8 bước, nút thao tác (đổi tên, chạy lại trang lỗi, duyệt tay khi tắt tự chạy),
      điểm chất lượng + 「要確認 N件」, lưới trang + live log, bảng định tuyến. Index xong → nút 「チャットで試す」.
    - **原本 (Bản gốc)**: thumbnail trái, ảnh trang giữa (zoom), panel thông tin phải.
    - **テキスト (Văn bản)**: Markdown sau xử lý, từng trang có nhãn `p.N`.
+   - **チャンク (Chunk — cấp tài liệu)** `?tab=chunks&chunk=<id>`: toàn bộ chunk theo thứ tự; chunk có thể trải
+     nhiều trang (cắt theo mã mục trên văn bản đã nối trang) → hiện dải trang PDF + trang sách, 「Nページにまたがる」,
+     ⚠ khi trang của chunk còn điểm yếu. Sửa / tách tại con trỏ / gộp với chunk sau; tài liệu tự chạy → lưu xong tự
+     duyệt + index lại. Panel チャンク trong 検査 giữ để xem chunk liên quan trang đang xem (nhãn 「このページから」
+     「前ページから続く」「次ページへ続く」, nút mở trong tab này).
    - **インサイト (Nhận định)**: tóm tắt + ý chính do LLM tạo (nút tạo lại).
    - **検査 (Kiểm tra)**: thanh chất lượng (điểm + hạng, trang kém nhất, đếm điểm yếu theo loại, nút
      「弱点をAIで修正」「AIで採点」), thumbnail trái, ảnh trang với khung phần tử đánh số theo thứ tự đọc

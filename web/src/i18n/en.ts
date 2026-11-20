@@ -233,6 +233,7 @@ const en = {
     embedding_not_configured: "Embedding is not configured (Settings → AI services)",
     search_not_configured: "Search is not configured (Settings → AI services)",
     cu_not_configured: "Content Understanding is not configured",
+    chunk_not_found: "Chunk not found",
     doc_not_in_chunk_review: "Document is not in chunk review",
     merge_needs_two: "Select at least two chunks",
     merge_not_adjacent: "Only adjacent chunks can be merged",

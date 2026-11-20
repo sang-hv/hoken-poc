@@ -5,7 +5,7 @@ import { useTranslation } from "react-i18next";
 import { useErrorText } from "@/components/common";
 import { Badge, Button, type Tone } from "@/components/ui";
 import { ApiError, api } from "@/lib/api";
-import type { Chunk } from "@/lib/types";
+import type { Chunk, Doc } from "@/lib/types";
 import type {
   DocInfo,
   DocQuality,
@@ -21,8 +21,8 @@ import type {
 } from "@/lib/v2types";
 import { cn } from "@/lib/utils";
 
-export type ViewerTab = "pipeline" | "original" | "text" | "insights" | "inspect";
-export const VIEWER_TABS: ViewerTab[] = ["pipeline", "original", "text", "insights", "inspect"];
+export type ViewerTab = "pipeline" | "original" | "text" | "chunks" | "insights" | "inspect";
+export const VIEWER_TABS: ViewerTab[] = ["pipeline", "original", "text", "chunks", "insights", "inspect"];
 export type PanelTab = "elements" | "chunks" | "weak" | "history";
 
 /* ---------------------------------------------------------------- Query keys
@@ -39,6 +39,7 @@ export const vk = {
   chunks: (doc: string, page: number) => ["inspect", doc, "chunks", page] as const,
   history: (doc: string, page: number) => ["inspect", doc, "history", page] as const,
   pages: (doc: string) => ["pages", doc] as const, // dùng chung với màn cũ
+  docChunks: (doc: string) => ["inspect", doc, "doc-chunks"] as const,
 };
 
 /** Sau khi sửa / đọc lại / xác nhận một phần tử: làm mới những gì phụ thuộc vào nó. */
@@ -59,6 +60,21 @@ const noRetry4xx = (count: number, e: unknown) => !(e instanceof ApiError && e.s
 
 export function useDocInfo(doc: string) {
   return useQuery({ queryKey: vk.info(doc), queryFn: () => api.get<DocInfo>(`/documents/${doc}/info`), retry: noRetry4xx });
+}
+/** Tài liệu (Doc) — dùng chung key với tab パイプライン; cần book_page_start để đổi trang sách ↔ trang PDF. */
+export function useDocMeta(doc: string) {
+  return useQuery({ queryKey: ["document", doc], queryFn: () => api.get<Doc>(`/documents/${doc}`), retry: noRetry4xx });
+}
+/** Chunk lưu trang SÁCH; viewer đánh số trang PDF. */
+export function bookToPdf(doc: Pick<Doc, "book_page_start" | "page_from">, book: number) {
+  return book - doc.book_page_start + doc.page_from;
+}
+export function useDocChunks(doc: string) {
+  return useQuery({
+    queryKey: vk.docChunks(doc),
+    queryFn: () => api.get<Chunk[]>(`/documents/${doc}/chunks`),
+    retry: noRetry4xx,
+  });
 }
 export function useQuality(doc: string, poll = false) {
   return useQuery({

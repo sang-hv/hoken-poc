@@ -167,3 +167,35 @@ def test_edit_while_indexing_is_deferred_then_reindexed(container, monkeypatch):
     inspect_svc.run_pending_reindex(c, "d1")
     inspect_svc.run_pending_reindex(c, "d1")  # cờ đã xoá → không chạy lại lần 2
     assert called == [("d1", "u1")]
+
+
+def test_chunk_edit_on_auto_doc_reindexes(container, sample_pdf):
+    """Tab チャンク: sửa / tách chunk của tài liệu tự chạy → duyệt luôn (người sửa) rồi index lại."""
+    from app.services import chunks as chunk_svc
+
+    c = container
+    _search_ready(c)
+    doc = _auto_doc(c, sample_pdf)
+    drain(c)
+    first = c.repo.list_chunks(doc.id)[0]
+    chunk_svc.update_chunk(
+        c,
+        doc.id,
+        first.id,
+        text=first.text + "\nZ777 追記",
+        item_code=first.item_code,
+        title=first.title,
+        page_from=None,
+        page_to=None,
+        actor="u1",
+    )
+    assert c.repo.get_doc(doc.id).status == DocStatus.indexing
+    drain(c)
+    assert c.repo.get_doc(doc.id).status == DocStatus.indexed
+    edited = c.repo.get_chunk(doc.id, first.id)
+    assert edited.status == ChunkStatus.indexed and edited.edited_by == "u1" and "Z777" in edited.text
+    n = len(c.repo.list_chunks(doc.id))
+    chunk_svc.split_chunk(c, doc.id, first.id, len(first.text) // 2, "u1")
+    drain(c)
+    assert len(c.repo.list_chunks(doc.id)) == n + 1 and c.repo.get_doc(doc.id).status == DocStatus.indexed
+    assert c.config.overrides["search"].count() == n + 1
