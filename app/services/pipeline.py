@@ -106,9 +106,14 @@ def create_document(
 
 
 # ================================================================== trạng thái
-def chunk_flagged(c: Container, ch: Chunk) -> bool:
-    """Chunk cần người xem: vi phạm luật hoặc confidence dưới review.chunk_warn_below."""
-    return bool(ch.violations) or ch.confidence < c.config.pipeline()[1].review.chunk_warn_below
+def chunk_flag_threshold(c: Container) -> float:
+    """review.chunk_warn_below — đọc MỘT lần rồi truyền cho chunk_flagged (đừng đọc cấu hình theo từng chunk)."""
+    return c.config.pipeline()[1].review.chunk_warn_below
+
+
+def chunk_flagged(ch: Chunk, threshold: float) -> bool:
+    """Chunk cần người xem: vi phạm luật hoặc confidence dưới ngưỡng."""
+    return bool(ch.violations) or ch.confidence < threshold
 
 
 def refresh_doc(c: Container, doc: Document | str, status: DocStatus | None = None) -> Document:
@@ -129,7 +134,8 @@ def refresh_doc(c: Container, doc: Document | str, status: DocStatus | None = No
         counts["chunks"] = len(chunks)
         counts["chunks_approved"] = sum(1 for x in chunks if x.status != ChunkStatus.draft)
         counts["chunks_indexed"] = sum(1 for x in chunks if x.status == ChunkStatus.indexed)
-        counts["chunks_flagged"] = sum(1 for x in chunks if chunk_flagged(c, x))
+        th = chunk_flag_threshold(c)
+        counts["chunks_flagged"] = sum(1 for x in chunks if chunk_flagged(x, th))
     doc.stats = counts
     if status is not None:
         doc.status = status

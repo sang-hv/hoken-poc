@@ -369,7 +369,7 @@ def test_warn_mode_holds_at_reviews_only_when_there_are_warnings(client, contain
     assert c.repo.get_doc(doc_id).status == DocStatus.ocr_review
 
     # すべて承認 → chunk; ép một chunk vi phạm luật để dừng ở チャンクレビュー
-    monkeypatch.setattr(pl, "chunk_flagged", lambda c_, ch: ch.seq == 1)
+    monkeypatch.setattr(pl, "chunk_flagged", lambda ch, th: ch.seq == 1)
     assert (
         client.post(f"/api/documents/{doc_id}/actions/approve_all_pages", json={"confirm": True}, headers=H).status_code
         == 200
@@ -404,7 +404,7 @@ def test_warn_mode_holds_at_reviews_only_when_there_are_warnings(client, contain
 
     # không có cảnh báo → tự chạy hết như auto
     weak["n"] = 0
-    monkeypatch.setattr(pl, "chunk_flagged", lambda c_, ch: False)
+    monkeypatch.setattr(pl, "chunk_flagged", lambda ch, th: False)
     d2 = client.post("/api/documents", files={"file": ("t.pdf", sample_pdf, "application/pdf")}, headers=H).json()["id"]
     drain(c)
     assert c.repo.get_doc(d2).status == DocStatus.indexed and c.repo.get_doc(d2).review_hold == ""

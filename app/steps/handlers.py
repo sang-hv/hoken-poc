@@ -384,7 +384,8 @@ def chunk_step(ctx: StepCtx) -> list[Next]:
     pl.refresh_doc(c, doc.id, DocStatus.chunk_review)
     if doc.auto_review:
         # warn: lần chunk đầu (không phải chunk lại sau khi sửa) có chunk cần xem → dừng ở チャンクレビュー
-        flagged = [x for x in chunks if pl.chunk_flagged(c, x)]
+        th = pl.chunk_flag_threshold(c)
+        flagged = [x for x in chunks if pl.chunk_flagged(x, th)]
         if pl.review_mode(doc) == "warn" and not changed and flagged:
             pl.hold_for_review(c, doc.id, "chunk", len(flagged))
             return []
