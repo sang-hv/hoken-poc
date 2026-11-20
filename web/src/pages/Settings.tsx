@@ -374,6 +374,16 @@ function PipelineTab() {
           <Switch checked={value} onCheckedChange={(v) => set(section, key, v)} />
         </label>
       );
+    if (section === "review" && key === "mode")
+      return (
+        <Field key={key} label={label} hint={t(`settings.reviewMode.${String(value)}Hint`)} className="sm:col-span-2">
+          <Select
+            value={String(value)}
+            onValueChange={(v) => set(section, key, v)}
+            options={["warn", "auto", "manual"].map((o) => ({ value: o, label: t(`settings.reviewMode.${o}`) }))}
+          />
+        </Field>
+      );
     if (key === "table_mode")
       return (
         <Field key={key} label={label}>

@@ -10,7 +10,7 @@ import { ChunksTab } from "@/components/v2/viewer/ChunksTab";
 import { InsightsTab } from "@/components/v2/viewer/InsightsTab";
 import { InspectTab } from "@/components/v2/viewer/InspectTab";
 import { PipelineTab } from "@/components/v2/viewer/PipelineTab";
-import { ReviewGate, reviewStage } from "@/components/v2/viewer/ReviewGate";
+import { ReviewGate, ReviewPrompt, reviewStage } from "@/components/v2/viewer/ReviewGate";
 import { OriginalTab } from "@/components/v2/viewer/OriginalTab";
 import { TextTab } from "@/components/v2/viewer/TextTab";
 import { TopBar } from "@/components/v2/viewer/TopBar";
@@ -157,7 +157,9 @@ export default function DocumentViewerPage() {
     <div className="flex h-full min-h-[32rem] flex-col bg-background">
       <TopBar docId={docId} info={info.data} infoLoading={info.isLoading} tab={tab} onTab={onTab} />
 
-      {/* Đang chờ review (duyệt tay): nhắc ở tab review tương ứng — 検査 cho OCR, チャンク cho chunk */}
+      {/* Dừng ở bước review (warn có cảnh báo / manual): popup hỏi review hay すべて承認 (mỗi bước một lần mỗi phiên) */}
+      <ReviewPrompt doc={meta.data} canEdit={canEdit} onTab={onTab} />
+      {/* ...và banner ở tab review tương ứng — 検査 cho OCR, チャンク cho chunk */}
       {meta.data &&
         ((tab === "inspect" && reviewStage(meta.data) === "ocr") ||
           (tab === "chunks" && reviewStage(meta.data) === "chunk")) && (

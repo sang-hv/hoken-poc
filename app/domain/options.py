@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from typing import Literal
+
+from pydantic import BaseModel, Field, model_validator
 
 DEFAULT_VISION_PROMPT = (
     "You convert a figure from a Japanese dental insurance document into text. "
@@ -52,14 +54,30 @@ class CuOptions(BaseModel):
     vision_prompt: str = DEFAULT_VISION_PROMPT
 
 
+ReviewMode = Literal["auto", "warn", "manual"]
+
+
 class ReviewOptions(BaseModel):
-    # Pipeline tự chạy hết (OCR → chunk → index), tự duyệt trang/chunk với người duyệt "auto"; chỗ kém chỉ hiện
-    # cảnh báo ⚠ để người sửa / xác nhận. Tắt → quay lại duyệt tay từng trang và chunk.
-    auto_review: bool = True
+    # Cách duyệt cho tài liệu upload (ghi vào tài liệu lúc upload):
+    #   auto   — tự chạy hết OCR → chunk → index, tự duyệt với người duyệt "auto"; chỗ kém chỉ gắn ⚠.
+    #   warn   — tự chạy, nhưng DỪNG ở OCR レビュー khi còn điểm yếu ⚠ và ở チャンクレビュー khi có chunk cần xem;
+    #            người review hoặc bấm 「すべて承認」 để đi tiếp. Không có cảnh báo thì tự đi tiếp như auto.
+    #   manual — luôn dừng ở hai bước review chờ duyệt tay.
+    mode: ReviewMode = "warn"
+    # (warn) chunk vi phạm luật hoặc có confidence dưới mức này → dừng ở チャンクレビュー
+    chunk_warn_below: float = 0.7
     # Vùng (chữ CU / phần tử Docling) có confidence dưới ngưỡng được viền đỏ trên ảnh trang.
     # Chỉ để tô màu — trang nào cũng vẫn phải review.
     low_confidence: float = 0.8
     rerun_prompt: str = DEFAULT_RERUN_PROMPT
+
+    @model_validator(mode="before")
+    @classmethod
+    def _legacy_auto_review(cls, v):
+        """Cấu hình cũ có `auto_review: false` (duyệt tay) → mode manual."""
+        if isinstance(v, dict) and "mode" not in v and v.get("auto_review") is False:
+            return {**v, "mode": "manual"}
+        return v
 
 
 class StitchOptions(BaseModel):

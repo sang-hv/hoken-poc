@@ -202,7 +202,10 @@ def test_page_low_confidence_and_raw_json(client, container, sample_pdf):
 
 
 def test_document_upload_runs_automatically_by_default(client, container, sample_pdf):
-    """Mặc định (review.auto_review = true): upload ở màn 文書 cũng tự chạy hết tới chunk, tự duyệt bởi "auto"."""
+    """review.mode auto: upload ở màn 文書 tự chạy hết tới chunk, tự duyệt bởi "auto"."""
+    from conftest import set_review_mode
+
+    set_review_mode(container, "auto")
     import app.steps.handlers  # noqa: F401
 
     _setup_admin(client)

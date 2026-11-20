@@ -28,7 +28,7 @@ import type { Doc, DocStatus, JobEvent, Page } from "@/lib/types";
 import type { DocQuality } from "@/lib/v2types";
 import { cn } from "@/lib/utils";
 import { RenameDialog } from "@/pages/Documents";
-import { ReviewGate } from "./ReviewGate";
+import { ReviewGate, reviewMode, reviewStage } from "./ReviewGate";
 import { type ViewerTab, vk } from "./shared";
 
 const ORDER: DocStatus[] = [
@@ -57,7 +57,9 @@ function useSteps(doc: Doc | undefined) {
     const s = (cond: boolean, running: boolean, action = false): StepState =>
       cond ? "done" : running ? (action ? "action" : "running") : "pending";
     const doclingDone = total - pre;
-    const auto = !!doc.auto_review; // tự duyệt: bước duyệt không chờ người
+    // auto: bước duyệt tự qua; warn: chỉ chờ người khi pipeline dừng vì cảnh báo; manual: luôn chờ
+    const stage = reviewStage(doc);
+    const auto = reviewMode(doc) === "auto";
     const autoMeta = (m?: string) => (auto ? "auto" : m);
     return [
       { key: "docling", icon: <ScanText />, state: s(pre === 0, true), meta: `${doclingDone}/${total}` },
@@ -72,14 +74,14 @@ function useSteps(doc: Doc | undefined) {
       {
         key: "review",
         icon: <UserCheck />,
-        state: s(at >= 3, at === 2, !auto),
+        state: s(at >= 3, at === 2, stage === "ocr"),
         meta: autoMeta(`${by("approved")}/${total}`),
       },
-      { key: "chunk", icon: <Layers />, state: s(at >= 5, at === 3 || at === 4, at === 3 && !auto) },
+      { key: "chunk", icon: <Layers />, state: s(at >= 5, at === 3 || at === 4, at === 3 && stage === "ocr") },
       {
         key: "chunkReview",
         icon: <ListChecks />,
-        state: s(at >= 6, at === 5, !auto),
+        state: s(at >= 6, at === 5, stage === "chunk"),
         meta: autoMeta(doc.stats.chunks ? `${doc.stats.chunks_approved ?? 0}/${doc.stats.chunks}` : undefined),
       },
       { key: "index", icon: <FileText />, state: s(at >= 7, at === 6) },
@@ -230,7 +232,9 @@ export function PipelineTab({
                 <div className="flex flex-wrap items-center gap-2">
                   <p className="text-sm font-semibold">{t("detail.pipeline")}</p>
                   <DocStatusBadge status={d.status} />
-                  {d.auto_review && <Badge tone="primary">{t("detail.autoRun")}</Badge>}
+                  <Badge tone={reviewMode(d) === "manual" ? "neutral" : "primary"}>
+                    {t(`detail.mode.${reviewMode(d)}`)}
+                  </Badge>
                 </div>
                 <p className="text-xs text-muted-foreground">
                   {t(`kinds.${d.kind}`, { defaultValue: d.kind })} ·{" "}

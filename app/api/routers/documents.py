@@ -58,7 +58,7 @@ async def upload(
         page_from=page_from,
         page_to=page_to,
         actor=user.email,
-        auto_review=c.config.pipeline()[1].review.auto_review,
+        review_mode=c.config.pipeline()[1].review.mode,
         file_type=file_type,
     )
     if file_type == "image":  # kích thước file khách tải lên, không phải PDF đã đổi

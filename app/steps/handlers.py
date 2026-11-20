@@ -164,7 +164,7 @@ def stitch_step(ctx: StepCtx) -> list[Next]:
     )
     pl.refresh_doc(c, doc.id, DocStatus.ocr_review)
     pl.refresh_doc(c, doc.id)
-    if doc.auto_review:  # review.auto_review: không chờ người review, chạy tiếp luồng tự động
+    if doc.auto_review:  # review.mode auto / warn: chạy tiếp luồng tự động (warn có thể dừng ở bước review)
         return [Next("auto_review")]
     return []
 
@@ -173,7 +173,8 @@ def stitch_step(ctx: StepCtx) -> list[Next]:
 @register("auto_review", "ai")
 def auto_review_step(ctx: StepCtx) -> list[Next]:
     """Dựng phần tử + điểm yếu (inspect), duyệt mọi trang với người duyệt "auto", rồi xếp job chunk.
-    Điểm yếu không chặn luồng: người xử lý sau (sửa / xác nhận) ở màn 検査."""
+    review.mode auto: điểm yếu không chặn luồng (người xử lý sau ở 検査). warn: còn điểm yếu (hoặc không chấm được)
+    → dừng ở OCR レビュー (review_hold = "ocr") chờ người review / 「すべて承認」."""
     c, doc = ctx.c, ctx.doc
     if not doc.auto_review:
         raise StepSkipped("not_auto_review")
@@ -184,6 +185,12 @@ def auto_review_step(ctx: StepCtx) -> list[Next]:
     except Exception as e:  # noqa: BLE001 — chấm chất lượng lỗi không được chặn tài liệu
         ctx.emit("auto.prepare_failed", "warn", error=type(e).__name__)
     ctx.check_cancelled()
+    if pl.review_mode(doc) == "warn":
+        q = inspect.doc_quality(c, doc.id)
+        open_n = q["weak_open"] if q else None
+        if open_n is None or open_n > 0:
+            pl.hold_for_review(c, doc.id, "ocr", open_n or 0)
+            return []
     pl.auto_approve_pages(c, doc.id)
     pl.start_chunking(c, doc.id, pl.AUTO)
     return []
@@ -376,6 +383,11 @@ def chunk_step(ctx: StepCtx) -> list[Next]:
     ctx.emit("chunk.done", chunks=len(chunks), low_confidence=sum(1 for x in chunks if x.confidence < 0.7))
     pl.refresh_doc(c, doc.id, DocStatus.chunk_review)
     if doc.auto_review:
+        # warn: lần chunk đầu (không phải chunk lại sau khi sửa) có chunk cần xem → dừng ở チャンクレビュー
+        flagged = [x for x in chunks if pl.chunk_flagged(c, x)]
+        if pl.review_mode(doc) == "warn" and not changed and flagged:
+            pl.hold_for_review(c, doc.id, "chunk", len(flagged))
+            return []
         pl.auto_start_index(c, doc.id)
     return []
 

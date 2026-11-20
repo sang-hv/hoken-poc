@@ -68,7 +68,12 @@ class Document(BaseModel):
     updated_at: str = ""
     config_version: int = 0  # phiên bản tuỳ chọn pipeline lúc upload
     stats: dict[str, int] = Field(default_factory=dict)
-    auto_review: bool = False  # review.auto_review lúc upload: tự duyệt trang/chunk, điểm yếu chuyển cho người xử lý
+    # review.mode lúc upload: "auto" | "warn" | "manual" ("" = tài liệu cũ → suy ra từ auto_review).
+    review_mode: str = ""
+    # = review_mode != "manual": được tự duyệt / tự chunk + index lại sau khi sửa (khi không bị giữ ở bước review)
+    auto_review: bool = False
+    # (warn) đang dừng chờ người ở bước nào: "ocr" | "chunk" | "" — xoá khi đi tiếp (start_chunking / start_index)
+    review_hold: str = ""
     file_type: str = "pdf"  # pdf | image (ảnh được đổi sang PDF 1 trang khi tải lên)
     size_bytes: int = 0
 

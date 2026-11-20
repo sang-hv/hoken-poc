@@ -41,7 +41,7 @@ def _back_to_review(c: Container, doc) -> None:
 def _after_edit(c: Container, doc, actor: str) -> None:
     """Sau khi sửa / gộp / tách chunk. Duyệt tay: quay lại chunk_review chờ duyệt. Tự chạy (auto_review): người sửa
     coi như đã duyệt → duyệt luôn chunk vừa đổi rồi index lại, chat dùng được nội dung mới ngay."""
-    if not doc.auto_review:
+    if not doc.auto_review or doc.review_hold == "chunk":  # duyệt tay / đang dừng ở チャンクレビュー (warn)
         _back_to_review(c, doc)
         return
     for x in c.repo.list_chunks(doc.id):

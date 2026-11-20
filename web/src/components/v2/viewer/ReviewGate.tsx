@@ -1,9 +1,10 @@
-/** Nhắc review khi tài liệu (duyệt tay) dừng ở OCR レビュー / チャンクレビュー: nút đi tới chỗ review và 「すべて承認」
- *  (popup xác nhận → duyệt hết phần còn lại và chạy luôn bước sau). Hiện ở tab パイプライン (card) và tab review
- *  tương ứng (strip): 検査 cho OCR, チャンク cho chunk. */
-import { useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Layers, ListChecks, CheckCheck, UserCheck } from "lucide-react";
-import { useState } from "react";
+/** Bước review chờ người (review.mode warn khi có cảnh báo, hoặc manual):
+ *  - `ReviewPrompt`: popup tự hiện khi tài liệu dừng ở OCR レビュー / チャンクレビュー — 「レビューする」 hoặc
+ *    「すべて承認して次へ」 (duyệt hết phần còn lại, ghi audit, chạy luôn bước sau). Đóng = để sau (nhớ theo phiên).
+ *  - `ReviewGate`: banner ở tab パイプライン (card) và tab review tương ứng (strip: 検査 cho OCR, チャンク cho chunk). */
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { AlertTriangle, CheckCheck, Layers, ListChecks, UserCheck } from "lucide-react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -11,17 +12,205 @@ import { useToastError } from "@/components/common";
 import { Button, Dialog } from "@/components/ui";
 import { api } from "@/lib/api";
 import type { Doc } from "@/lib/types";
+import type { DocQuality } from "@/lib/v2types";
 import { cn } from "@/lib/utils";
 import { type ViewerTab, vk } from "./shared";
 
+export type ReviewMode = "auto" | "warn" | "manual";
 export type ReviewStage = "ocr" | "chunk" | null;
 
-/** Bước review đang chờ người (chỉ tài liệu duyệt tay; tài liệu tự chạy tự qua các bước này). */
+/** review.mode lúc upload (tài liệu cũ chưa có → suy ra từ auto_review). */
+export function reviewMode(doc: Doc | undefined): ReviewMode {
+  if (!doc) return "auto";
+  return (doc.review_mode as ReviewMode) || (doc.auto_review ? "auto" : "manual");
+}
+
+/** Bước review đang chờ người: manual → mọi lần tới bước review; warn → chỉ khi pipeline dừng vì có cảnh báo. */
 export function reviewStage(doc: Doc | undefined): ReviewStage {
-  if (!doc || doc.auto_review) return null;
-  if (doc.status === "ocr_review" || doc.status === "ready_for_chunking") return "ocr";
-  if (doc.status === "chunk_review") return "chunk";
+  const mode = reviewMode(doc);
+  if (!doc || mode === "auto") return null;
+  const ocr = doc.status === "ocr_review" || doc.status === "ready_for_chunking";
+  const chunk = doc.status === "chunk_review";
+  if (mode === "manual") return ocr ? "ocr" : chunk ? "chunk" : null;
+  if (ocr && doc.review_hold === "ocr") return "ocr";
+  if (chunk && doc.review_hold === "chunk") return "chunk";
   return null;
+}
+
+function counts(doc: Doc, stage: Exclude<ReviewStage, null>) {
+  const total = doc.page_to - doc.page_from + 1;
+  const pagesDone = doc.stats.approved ?? 0;
+  const chunks = doc.stats.chunks ?? 0;
+  const chunksDone = doc.stats.chunks_approved ?? 0;
+  return stage === "ocr"
+    ? { done: pagesDone, total, left: total - pagesDone }
+    : { done: chunksDone, total: chunks, left: chunks - chunksDone };
+}
+
+function useApproveAll(doc: Doc, onDone: () => void) {
+  const { t } = useTranslation();
+  const qc = useQueryClient();
+  const toastError = useToastError();
+  const [busy, setBusy] = useState<string | null>(null);
+  const act = async (name: string, ok: string) => {
+    setBusy(name);
+    try {
+      await api.post(`/documents/${doc.id}/actions/${name}`);
+      toast.success(ok);
+      onDone();
+      qc.invalidateQueries({ queryKey: ["document", doc.id] });
+      qc.invalidateQueries({ queryKey: vk.all(doc.id) });
+      qc.invalidateQueries({ queryKey: vk.pages(doc.id) });
+    } catch (e) {
+      toastError(e);
+    } finally {
+      setBusy(null);
+    }
+  };
+  const approveAll = (stage: Exclude<ReviewStage, null>) =>
+    stage === "ocr"
+      ? act("approve_all_pages", t("viewer.gate.approvedAllOcr"))
+      : act("approve_all_chunks", t("viewer.gate.approvedAllChunk"));
+  return { busy, act, approveAll };
+}
+
+/** Popup: số cảnh báo + 「レビューする」 / 「すべて承認して次へ」. `onReview` không truyền = chỉ xác nhận すべて承認. */
+function ReviewDialog({
+  doc,
+  stage,
+  open,
+  onOpenChange,
+  onReview,
+}: {
+  doc: Doc;
+  stage: Exclude<ReviewStage, null>;
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  onReview?: () => void;
+}) {
+  const { t } = useTranslation();
+  const { busy, approveAll } = useApproveAll(doc, () => onOpenChange(false));
+  const quality = useQuery({
+    queryKey: vk.quality(doc.id),
+    queryFn: () => api.get<DocQuality>(`/documents/${doc.id}/quality`),
+    enabled: open && stage === "ocr",
+  });
+  const c = counts(doc, stage);
+  const warnings = stage === "ocr" ? quality.data?.weak_open : doc.stats.chunks_flagged;
+  const held = reviewMode(doc) === "warn";
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title={
+        onReview
+          ? stage === "ocr"
+            ? t("viewer.gate.promptOcrTitle")
+            : t("viewer.gate.promptChunkTitle")
+          : stage === "ocr"
+            ? t("viewer.gate.approveAllOcrTitle")
+            : t("viewer.gate.approveAllChunkTitle")
+      }
+      footer={
+        <>
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>
+            {onReview ? t("viewer.gate.later") : t("common.cancel")}
+          </Button>
+          {onReview && (
+            <Button
+              variant="outline"
+              onClick={() => {
+                onOpenChange(false);
+                onReview();
+              }}
+            >
+              {stage === "ocr" ? <UserCheck /> : <ListChecks />}
+              {stage === "ocr" ? t("viewer.gate.reviewPages") : t("viewer.gate.reviewChunks")}
+            </Button>
+          )}
+          <Button loading={busy !== null} disabled={c.left <= 0} onClick={() => approveAll(stage)}>
+            <CheckCheck />
+            {t("viewer.gate.approveAllConfirm")}
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-3 text-sm leading-relaxed">
+        {onReview && (
+          <p>
+            {held
+              ? stage === "ocr"
+                ? t("viewer.gate.heldOcr", { n: warnings ?? "…" })
+                : t("viewer.gate.heldChunk", { n: warnings ?? "…" })
+              : stage === "ocr"
+                ? t("viewer.gate.manualOcr")
+                : t("viewer.gate.manualChunk")}
+          </p>
+        )}
+        <div className="flex gap-3 rounded-lg border border-warning/40 bg-warning-soft/60 p-3">
+          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
+          <div className="space-y-1.5">
+            <p className="font-medium">
+              {stage === "ocr"
+                ? t("viewer.gate.approveAllOcrBody", { n: c.left })
+                : t("viewer.gate.approveAllChunkBody", { n: c.left })}
+            </p>
+            <p className="text-muted-foreground">
+              {stage === "ocr" ? t("viewer.gate.approveAllOcrRisk") : t("viewer.gate.approveAllChunkRisk")}
+            </p>
+            <p className="text-xs text-muted-foreground">{t("viewer.gate.recorded")}</p>
+          </div>
+        </div>
+      </div>
+    </Dialog>
+  );
+}
+
+const promptKey = (doc: string, stage: string) => `hoken.reviewPrompt:${doc}:${stage}`;
+
+/** Popup tự hiện khi tài liệu dừng ở bước review (mỗi bước một lần mỗi phiên; đóng = để sau). */
+export function ReviewPrompt({
+  doc,
+  canEdit,
+  onTab,
+}: {
+  doc: Doc | undefined;
+  canEdit: boolean;
+  onTab: (t: ViewerTab) => void;
+}) {
+  const nav = useNavigate();
+  const stage = reviewStage(doc);
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!doc || !stage || !canEdit) return setOpen(false);
+    let seen = false;
+    try {
+      seen = sessionStorage.getItem(promptKey(doc.id, stage)) === "1";
+    } catch {
+      /* bỏ qua */
+    }
+    if (!seen) setOpen(true);
+  }, [doc?.id, stage, canEdit]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (!doc || !stage) return null;
+  const close = (o: boolean) => {
+    setOpen(o);
+    if (!o)
+      try {
+        sessionStorage.setItem(promptKey(doc.id, stage), "1");
+      } catch {
+        /* bỏ qua */
+      }
+  };
+  return (
+    <ReviewDialog
+      doc={doc}
+      stage={stage}
+      open={open}
+      onOpenChange={close}
+      onReview={() => (stage === "ocr" ? nav(`/documents/${doc.id}/review`) : onTab("chunks"))}
+    />
+  );
 }
 
 export function ReviewGate({
@@ -38,40 +227,19 @@ export function ReviewGate({
 }) {
   const { t } = useTranslation();
   const nav = useNavigate();
-  const qc = useQueryClient();
-  const toastError = useToastError();
   const [confirm, setConfirm] = useState(false);
-  const [busy, setBusy] = useState<string | null>(null);
   const stage = reviewStage(doc);
+  const { busy, act } = useApproveAll(doc, () => setConfirm(false));
   if (!stage) return null;
 
-  const total = doc.page_to - doc.page_from + 1;
-  const pagesDone = doc.stats.approved ?? 0;
-  const chunks = doc.stats.chunks ?? 0;
-  const chunksDone = doc.stats.chunks_approved ?? 0;
-  const left = stage === "ocr" ? total - pagesDone : chunks - chunksDone;
-  const allDone = left <= 0;
-
-  const act = async (name: string, ok: string) => {
-    setBusy(name);
-    try {
-      await api.post(`/documents/${doc.id}/actions/${name}`);
-      toast.success(ok);
-      setConfirm(false);
-      qc.invalidateQueries({ queryKey: ["document", doc.id] });
-      qc.invalidateQueries({ queryKey: vk.all(doc.id) });
-    } catch (e) {
-      toastError(e);
-    } finally {
-      setBusy(null);
-    }
-  };
-
+  const c = counts(doc, stage);
+  const allDone = c.left <= 0;
+  const held = reviewMode(doc) === "warn";
   const title = stage === "ocr" ? t("viewer.gate.ocrTitle") : t("viewer.gate.chunkTitle");
   const progress =
     stage === "ocr"
-      ? t("viewer.gate.ocrProgress", { n: pagesDone, total })
-      : t("viewer.gate.chunkProgress", { n: chunksDone, total: chunks });
+      ? t("viewer.gate.ocrProgress", { n: c.done, total: c.total })
+      : t("viewer.gate.chunkProgress", { n: c.done, total: c.total });
 
   return (
     <>
@@ -92,6 +260,7 @@ export function ReviewGate({
         <p className="min-w-0 flex-1 leading-relaxed">
           <span className="font-semibold">{title}</span>
           <span className="ml-2 text-muted-foreground">
+            {held && <>{t("viewer.gate.heldShort")} · </>}
             {progress} · {allDone ? t("viewer.gate.allDone") : t("viewer.gate.hint")}
           </span>
         </p>
@@ -134,43 +303,7 @@ export function ReviewGate({
           </div>
         )}
       </div>
-
-      <Dialog
-        open={confirm}
-        onOpenChange={setConfirm}
-        title={stage === "ocr" ? t("viewer.gate.approveAllOcrTitle") : t("viewer.gate.approveAllChunkTitle")}
-        footer={
-          <>
-            <Button variant="ghost" onClick={() => setConfirm(false)}>
-              {t("common.cancel")}
-            </Button>
-            <Button
-              loading={busy !== null}
-              onClick={() =>
-                stage === "ocr"
-                  ? act("approve_all_pages", t("viewer.gate.approvedAllOcr"))
-                  : act("approve_all_chunks", t("viewer.gate.approvedAllChunk"))
-              }
-            >
-              <CheckCheck />
-              {t("viewer.gate.approveAllConfirm")}
-            </Button>
-          </>
-        }
-      >
-        <div className="flex gap-3 rounded-lg border border-warning/40 bg-warning-soft/60 p-3 text-sm leading-relaxed">
-          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
-          <div className="space-y-1.5">
-            <p className="font-medium">
-              {stage === "ocr" ? t("viewer.gate.approveAllOcrBody", { n: left }) : t("viewer.gate.approveAllChunkBody", { n: left })}
-            </p>
-            <p className="text-muted-foreground">
-              {stage === "ocr" ? t("viewer.gate.approveAllOcrRisk") : t("viewer.gate.approveAllChunkRisk")}
-            </p>
-            <p className="text-xs text-muted-foreground">{t("viewer.gate.recorded")}</p>
-          </div>
-        </div>
-      </Dialog>
+      <ReviewDialog doc={doc} stage={stage} open={confirm} onOpenChange={setConfirm} />
     </>
   );
 }

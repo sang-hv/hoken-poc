@@ -37,7 +37,9 @@ export interface Doc {
   created_at: string;
   updated_at: string;
   config_version: number;
-  auto_review?: boolean; // pipeline tự duyệt trang/chunk (review.auto_review lúc upload)
+  review_mode?: "auto" | "warn" | "manual" | ""; // review.mode lúc upload ("" = tài liệu cũ → theo auto_review)
+  auto_review?: boolean; // review_mode != manual
+  review_hold?: "ocr" | "chunk" | ""; // (warn) đang dừng chờ người ở bước review nào
   file_type?: "pdf" | "image";
   stats: Record<string, number>;
 }

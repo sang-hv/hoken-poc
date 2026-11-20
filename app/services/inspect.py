@@ -342,8 +342,8 @@ def reindex_document(c: Container, doc_id: str, actor: str, pages: list[int] | N
     `pages` (trang PDF vừa sửa): chỉ chunk lại các mục dính tới các trang đó, giữ chunk khác (kể cả sửa tay);
     None = chunk lại toàn bộ."""
     doc = c.repo.get_doc(doc_id)
-    if not doc or not doc.auto_review:
-        return None
+    if not doc or not doc.auto_review or doc.review_hold:
+        return None  # duyệt tay, hoặc đang dừng chờ người ở bước review (warn) → người duyệt sẽ cho đi tiếp
     if doc.status in (DocStatus.chunking, DocStatus.indexing):
         # Đang chunk/index: không chặn người sửa — ghi cờ (gộp các trang), job index xong sẽ chạy lại
         old = c.repo.s.get(FLAGS, doc_id, "reindex_pending")

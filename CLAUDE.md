@@ -10,11 +10,13 @@ Skill của repo (đọc trước khi sửa): `.claude/skills/architecture`, `.c
 - **Prod**: mọi dữ liệu lưu và xử lý tại Nhật — Azure Japan East, deployment Standard (không Global / Data Zone);
   dự phòng Bedrock profile `jp.`. **Dev** được linh hoạt, miễn là dùng dịch vụ Content Understanding (Azure) và LLM.
 - **Content Understanding luôn là Azure**, kể cả khi phần hạ tầng còn lại chạy Local hoặc AWS.
-- **Pipeline tự chạy từ đầu đến cuối** (OCR → chunk → embedding → index), không chờ người duyệt — cho mọi tài liệu
-  tải lên ở màn 文書, theo tuỳ chọn `review.auto_review` (mặc định bật).
+- **Pipeline tự chạy, chỉ dừng khi có cảnh báo** (OCR → chunk → embedding → index) — tuỳ chọn `review.mode`:
+  - `warn` (mặc định): tự chạy; **dừng ở OCR レビュー** nếu còn điểm yếu ⚠, **dừng ở チャンクレビュー** nếu có chunk
+    cần xem (vi phạm luật / confidence < `review.chunk_warn_below`). Khi dừng: popup cho người **review** hoặc
+    **すべて承認** (duyệt hết, ghi audit, chạy luôn bước sau). Không có cảnh báo thì tự đi tiếp.
+  - `auto`: tự chạy hết, cảnh báo không chặn. `manual`: luôn dừng ở hai bước review.
   Phần tử có confidence **dưới ngưỡng cài đặt** (`quality.auto_vlm_below` → AI tự đọc lại; `quality.weak_confidence`
   → gắn ⚠ cảnh báo) thì hiện cho người dùng **sửa** (→ tự chunk + index lại) hoặc **bỏ qua** (xác nhận đúng).
-  Cảnh báo không chặn pipeline. Tắt `review.auto_review` thì quay lại duyệt tay từng trang / chunk.
 - Câu chatbot không trả lời được thì chuyển bộ phận CSKH (khu B).
 - Repo chỉ chứa tài liệu công khai của MHLW. Không commit dữ liệu bệnh nhân, dữ liệu khách hay câu hỏi khách.
 - Không commit key hay endpoint thật. Log và live log chỉ ghi mã + id/trang/mã mục/lý do, không chép nội dung tài liệu.

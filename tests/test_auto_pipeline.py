@@ -1,4 +1,4 @@
-"""Pipeline tự chạy hết (review.auto_review): upload ở màn 文書 → OCR → tự duyệt → chunk → tự duyệt → index;
+"""Pipeline tự chạy (review.mode auto / warn): upload ở màn 文書 → OCR → tự duyệt → chunk → tự duyệt → index;
 ảnh → PDF 1 trang; sửa phần tử → chunk + index lại."""
 
 from __future__ import annotations
@@ -6,6 +6,7 @@ from __future__ import annotations
 import io
 
 import pytest
+from conftest import set_review_mode
 from fastapi.testclient import TestClient
 
 import app.steps.handlers  # noqa: F401 — đăng ký step
@@ -62,6 +63,7 @@ def _auto_doc(c, pdf: bytes) -> Document:
 
 def test_upload_runs_whole_pipeline_with_auto_review(client, container, sample_pdf, monkeypatch):
     c = container
+    set_review_mode(c, "auto")
     _search_ready(c)
     prepared = []
     monkeypatch.setattr(inspect_svc, "prepare_document", lambda c_, doc_id: prepared.append(doc_id))
@@ -98,6 +100,7 @@ def test_prepare_failure_does_not_block(container, sample_pdf, monkeypatch):
 
 def test_image_upload_becomes_one_page_pdf(client, container):
     c = container
+    set_review_mode(c, "auto")
     _search_ready(c)
     png = _png()
     r = client.post("/api/documents", files={"file": ("scan.png", png, "image/png")}, headers=H)
@@ -339,3 +342,67 @@ def test_approve_all_goes_straight_to_next_step(client, container, sample_pdf):
     assert {"review.approved_all", "chunk.approved_all"} <= codes
     acts = {a.action for a in c.repo.list_audit()}
     assert {"review.approve_all", "chunk.approve_all"} <= acts
+
+
+def test_warn_mode_holds_at_reviews_only_when_there_are_warnings(client, container, sample_pdf, monkeypatch):
+    """review.mode warn (mặc định): còn điểm yếu → dừng ở OCR レビュー; すべて承認 → chunk; có chunk cần xem → dừng ở
+    チャンクレビュー; すべて承認 → index. Không có cảnh báo → tự đi tiếp như auto."""
+    from app.services import chunks as chunk_svc
+
+    c = container
+    _search_ready(c)
+    weak = {"n": 2}
+    monkeypatch.setattr(inspect_svc, "prepare_document", lambda c_, d: None)
+    monkeypatch.setattr(inspect_svc, "doc_quality", lambda c_, d, build=False: {"weak_open": weak["n"]})
+    doc_id = client.post("/api/documents", files={"file": ("s.pdf", sample_pdf, "application/pdf")}, headers=H).json()[
+        "id"
+    ]
+    drain(c)
+    doc = c.repo.get_doc(doc_id)
+    assert doc.review_mode == "warn" and doc.auto_review and doc.review_hold == "ocr"
+    assert doc.status == DocStatus.ocr_review and all(p.status == PageStatus.review for p in c.repo.list_pages(doc_id))
+    assert "review.hold_ocr" in {e.code for e in c.repo.recent_events(doc_id, limit=1000)}
+    # đang dừng: sửa nội dung trang không được tự duyệt + chunk (không lách qua bước review)
+    inspect_svc.reindex_document(c, doc_id, "u1", [1])
+    assert c.repo.get_doc(doc_id).status == DocStatus.ocr_review
+
+    # すべて承認 → chunk; ép một chunk vi phạm luật để dừng ở チャンクレビュー
+    monkeypatch.setattr(pl, "chunk_flagged", lambda c_, ch: ch.seq == 1)
+    assert client.post(f"/api/documents/{doc_id}/actions/approve_all_pages", headers=H).status_code == 200
+    assert c.repo.get_doc(doc_id).review_hold == ""
+    drain(c)
+    doc = c.repo.get_doc(doc_id)
+    assert doc.status == DocStatus.chunk_review and doc.review_hold == "chunk"
+    # đang dừng ở チャンクレビュー: sửa chunk không tự index
+    first = c.repo.list_chunks(doc_id)[0]
+    chunk_svc.update_chunk(
+        c,
+        doc_id,
+        first.id,
+        text=first.text + " x",
+        item_code=first.item_code,
+        title=first.title,
+        page_from=None,
+        page_to=None,
+        actor="u1",
+    )
+    assert c.repo.get_doc(doc_id).status == DocStatus.chunk_review
+    assert client.post(f"/api/documents/{doc_id}/actions/approve_all_chunks", headers=H).status_code == 200
+    drain(c)
+    doc = c.repo.get_doc(doc_id)
+    assert doc.status == DocStatus.indexed and doc.review_hold == ""
+
+    # không có cảnh báo → tự chạy hết như auto
+    weak["n"] = 0
+    monkeypatch.setattr(pl, "chunk_flagged", lambda c_, ch: False)
+    d2 = client.post("/api/documents", files={"file": ("t.pdf", sample_pdf, "application/pdf")}, headers=H).json()["id"]
+    drain(c)
+    assert c.repo.get_doc(d2).status == DocStatus.indexed and c.repo.get_doc(d2).review_hold == ""
+
+
+def test_legacy_auto_review_setting_maps_to_mode():
+    from app.domain.options import ReviewOptions
+
+    assert ReviewOptions.model_validate({"auto_review": False}).mode == "manual"
+    assert ReviewOptions.model_validate({"auto_review": True}).mode == "warn"
+    assert ReviewOptions().mode == "warn"

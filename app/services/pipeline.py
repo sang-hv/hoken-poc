@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from app.core.util import new_id, now_iso
 from app.domain.models import (
+    Chunk,
     ChunkStatus,
     DocStatus,
     Document,
@@ -66,6 +67,7 @@ def create_document(
     actor: str,
     auto_review: bool = False,
     file_type: str = "pdf",
+    review_mode: str = "",
 ) -> Document:
     if not data.startswith(b"%PDF"):
         raise PipelineError("not_pdf")
@@ -87,7 +89,8 @@ def create_document(
         created_by=actor,
         created_at=now_iso(),
         config_version=version,
-        auto_review=auto_review,
+        review_mode=review_mode or ("auto" if auto_review else "manual"),
+        auto_review=(review_mode != "manual") if review_mode else auto_review,
         file_type=file_type,
         size_bytes=len(data),
     )
@@ -103,6 +106,11 @@ def create_document(
 
 
 # ================================================================== trạng thái
+def chunk_flagged(c: Container, ch: Chunk) -> bool:
+    """Chunk cần người xem: vi phạm luật hoặc confidence dưới review.chunk_warn_below."""
+    return bool(ch.violations) or ch.confidence < c.config.pipeline()[1].review.chunk_warn_below
+
+
 def refresh_doc(c: Container, doc: Document | str, status: DocStatus | None = None) -> Document:
     if isinstance(doc, str):
         doc = c.repo.get_doc(doc)
@@ -121,6 +129,7 @@ def refresh_doc(c: Container, doc: Document | str, status: DocStatus | None = No
         counts["chunks"] = len(chunks)
         counts["chunks_approved"] = sum(1 for x in chunks if x.status != ChunkStatus.draft)
         counts["chunks_indexed"] = sum(1 for x in chunks if x.status == ChunkStatus.indexed)
+        counts["chunks_flagged"] = sum(1 for x in chunks if chunk_flagged(c, x))
     doc.stats = counts
     if status is not None:
         doc.status = status
@@ -288,6 +297,24 @@ def _invalidate_chunks(c: Container, doc_id: str) -> None:
         refresh_doc(c, doc, DocStatus.ocr_review)
 
 
+# ================================================================== chế độ duyệt (review.mode)
+def review_mode(doc: Document) -> str:
+    """auto | warn | manual (tài liệu cũ chưa có review_mode → suy ra từ auto_review)."""
+    return doc.review_mode or ("auto" if doc.auto_review else "manual")
+
+
+def hold_for_review(c: Container, doc_id: str, stage: str, count: int) -> None:
+    """(warn) Dừng ở bước review vì có cảnh báo: ghi review_hold, chờ người review hoặc 「すべて承認」."""
+    doc = c.repo.get_doc(doc_id)
+    doc.review_hold = stage
+    c.repo.save_doc(doc)
+    emit(c, doc_id, f"review.hold_{stage}", "warn", count=count)
+
+
+def _release_hold(doc: Document) -> None:
+    doc.review_hold = ""
+
+
 # ================================================================== tự duyệt (UI v2, chỉ tài liệu auto_review)
 AUTO = "auto"  # người duyệt của luồng tự động
 
@@ -378,6 +405,7 @@ def start_chunking(c: Container, doc_id: str, actor: str, book_pages: list[int] 
         raise PipelineError("pages_not_approved")
     job = enqueue(c, doc_id, "chunk", params={"pages": sorted(book_pages)} if book_pages else None, actor=actor)
     if job:
+        _release_hold(doc)
         refresh_doc(c, doc, DocStatus.chunking)
     return job
 
@@ -392,6 +420,7 @@ def start_index(c: Container, doc_id: str, actor: str) -> Job | None:
             raise PipelineError(f"{comp}_not_configured")
     job = enqueue(c, doc_id, "index", actor=actor)
     if job:
+        _release_hold(doc)
         refresh_doc(c, doc, DocStatus.indexing)
     return job
 

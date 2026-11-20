@@ -28,6 +28,7 @@ import { useDebounced } from "@/lib/hooks";
 import type { Chunk, Doc } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { ChunkCompareDialog } from "./ChunkCompareDialog";
+import { reviewStage } from "./ReviewGate";
 import { QueryError, type ViewerTab, bookToPdf, useDocChunks, useDocMeta, useQuality, vk } from "./shared";
 
 type Filter = "all" | "issues";
@@ -119,7 +120,10 @@ export function ChunksTab({
       setBusy(null);
     }
   };
-  const saved = d?.auto_review ? t("viewer.chunkTab.savedReindex") : t("common.saved");
+  // Tự index lại sau khi sửa: tài liệu tự chạy và không đang dừng ở チャンクレビュー (cùng điều kiện với backend)
+  const autoIndex = !!d?.auto_review && d?.review_hold !== "chunk";
+  const reviewing = reviewStage(d) === "chunk";
+  const saved = autoIndex ? t("viewer.chunkTab.savedReindex") : t("common.saved");
 
   if (chunks.isError) return <QueryError error={chunks.error} onRetry={() => chunks.refetch()} className="m-auto" />;
   if (chunks.isLoading || !d)
@@ -284,7 +288,7 @@ export function ChunksTab({
                       </Button>
                     </Tip>
                   )}
-                  {!d.auto_review &&
+                  {reviewing &&
                     (active.status === "draft" ? (
                       <Button
                         size="sm"
@@ -398,7 +402,7 @@ export function ChunksTab({
                   </Field>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
-                  {d.auto_review && <p className="text-xs text-muted-foreground">{t("viewer.chunkTab.autoNote")}</p>}
+                  {autoIndex && <p className="text-xs text-muted-foreground">{t("viewer.chunkTab.autoNote")}</p>}
                   <span className="flex-1" />
                   <Button variant="ghost" size="sm" onClick={() => setEditing(false)}>
                     <X />

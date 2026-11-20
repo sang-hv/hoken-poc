@@ -91,10 +91,15 @@ def sample_pdf() -> bytes:
     return make_pdf(SAMPLE_PAGES)
 
 
-def manual_review(container) -> None:
-    """Tắt tự chạy (review.auto_review) cho test luồng duyệt tay từng trang / chunk."""
+def set_review_mode(container, mode: str) -> None:
+    """Đặt review.mode (auto | warn | manual) cho tài liệu upload sau đó."""
     from app.domain.options import PipelineOptions
 
     opts = PipelineOptions()
-    opts.review.auto_review = False
+    opts.review.mode = mode
     container.repo.put_setting("pipeline", {"version": 1, "options": opts.model_dump(mode="json")})
+
+
+def manual_review(container) -> None:
+    """Duyệt tay (review.mode = manual) cho test luồng duyệt từng trang / chunk."""
+    set_review_mode(container, "manual")

@@ -8,10 +8,11 @@ Yêu cầu gốc: sếp gửi (6 ảnh giao diện, tiếng Việt). Giao diện
 Menu: **運用** ダッシュボード · 文書 — **テスト** チャット (chat với bot trên toàn bộ tài liệu đã index, logic cũ
 `/api/chat/test`) — **管理** 設定 · ユーザー · 監査ログ. Không có ライブラリ / ノートブック, màn ジョブ, màn 検索.
 
-1. **文書 (Danh sách tài liệu)**: tải PDF / ảnh (PNG, JPEG → PDF 1 trang) lên → **pipeline tự chạy hết**
-   (Docling → định tuyến → CU/VLM → nối trang → *tự duyệt* → chunk → *tự duyệt* → embed + index) theo
-   `review.auto_review` (mặc định bật). Index xong là chat được ngay ở màn チャット.
-2. **Chi tiết tài liệu** `/documents/:docId` — 6 tab (mở 原本 nếu đã index xong, còn lại mở パイプライン):
+1. **文書 (Danh sách tài liệu)**: tải PDF / ảnh (PNG, JPEG → PDF 1 trang) lên → mở tab パイプライン, **pipeline tự chạy**
+   (Docling → định tuyến → CU/VLM → nối trang → OCR レビュー → chunk → チャンクレビュー → embed + index) theo
+   `review.mode` (mặc định `warn`: chỉ dừng ở bước review khi có cảnh báo — popup 「レビューする」/「すべて承認して次へ」;
+   `auto`: không dừng; `manual`: luôn dừng). Index xong là chat được ngay ở màn チャット.
+2. **Chi tiết tài liệu** `/documents/:docId` — 6 tab (mặc định パイプライン):
    - **パイプライン**: tiến độ 8 bước, nút thao tác (đổi tên, chạy lại trang lỗi, duyệt tay khi tắt tự chạy),
      điểm chất lượng + 「要確認 N件」, lưới trang + live log, bảng định tuyến. Index xong → nút 「チャットで試す」.
    - **原本 (Bản gốc)**: thumbnail trái, ảnh trang giữa (zoom), panel thông tin phải.
@@ -38,9 +39,9 @@ Pipeline tự chạy hết để khách chat được ngay; **không bỏ** vi�
   đúng). Điểm yếu chỉ hết khi người **sửa** hoặc **xác nhận**.
 - Phần tử điểm thấp được **tự gọi VLM** đọc lại trước (theo `quality.auto_vlm_below`); vẫn thấp thì đánh dấu `weak`.
 - 「要確認 N件」 trên tab パイプライン và 検査.
-- Tài liệu upload khi `review.auto_review = true`: trang/chunk được duyệt tự động với người duyệt `auto`; sửa
+- Tài liệu `review.mode` auto / warn (khi không dừng): trang/chunk được duyệt tự động với người duyệt `auto`; sửa
   phần tử → chỉ chunk lại các mục (section) dính tới trang vừa sửa rồi index lại — chunk khác, kể cả chunk người đã
-  sửa / gộp / tách ở tab チャンク, được giữ (mỗi chunk ghi khoá mục `sections`, vd `M017#0`). Tắt tuỳ chọn thì quay lại duyệt tay.
+  sửa / gộp / tách ở tab チャンク, được giữ (mỗi chunk ghi khoá mục `sections`, vd `M017#0`).
 
 Mã điểm yếu (`code`): `low_confidence` · `picture_no_desc` (hình chưa có mô tả) · `missing_text` (vùng có chữ nhưng
 đọc ra rỗng/quá ngắn) · `table_suspect` (bảng gộp ô / tràn trang / số cột lệch) · `reread` (đã phải đọc lại bằng
@@ -76,6 +77,7 @@ GET  /api/documents/{doc}/pages/{n}/history        → HistoryItem[]
 
 Xem `web/src/lib/v2types.ts` — đó là hợp đồng chung, backend trả đúng các field này (snake_case).
 
-- Tắt tự chạy (duyệt tay): tài liệu dừng ở OCR レビュー / チャンクレビュー → banner nhắc ở tab パイプライン và tab review
+- Dừng ở OCR レビュー / チャンクレビュー (warn có cảnh báo, hoặc manual) → popup tự hiện (mỗi bước một lần mỗi phiên) +
+  banner nhắc ở tab パイプライン và tab review
   tương ứng (検査 / チャンク) với nút đi review và 「すべて承認」 (popup xác nhận → duyệt hết phần còn lại với người
   duyệt là người bấm, ghi audit, chạy luôn bước sau: `actions/approve_all_pages` → chunk, `approve_all_chunks` → index).
