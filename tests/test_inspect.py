@@ -394,9 +394,18 @@ def test_accept_reread_fix_weak_score_insights(client, container, sample_pdf):
     state["elements"][1]["confidence"] = 0.5
     svc.assess(container, container.repo.get_doc(doc_id), container.repo.get_page(doc_id, 2), state)
     svc._save_state(container, doc_id, 2, state)
-    r = client.post(f"/api/documents/{doc_id}/fix-weak", headers=H)
+    info = client.get(f"/api/documents/{doc_id}/fix-weak").json()
+    assert info == {"prompt": svc.reread_guide(container), "weak": 1} and "M015-2" in info["prompt"]
+    systems: list[str] = []
+    llm.responder = lambda m, tier, js: (systems.append(m[0].text), _vlm(m, tier, js))[1]
+    r = client.post(f"/api/documents/{doc_id}/fix-weak", json={"prompt": "表は必ず3列にする"}, headers=H)
     assert r.status_code == 200 and r.json() == {"queued": 1}
     assert svc.open_weak_pages(container, doc_id) == set()
+    # Hướng dẫn người dùng sửa thay cho mặc định; dấu + khung JSON vẫn giữ
+    assert systems and "表は必ず3列にする" in systems[-1] and "M015-2" not in systems[-1]
+    assert systems[-1].startswith(svc.REREAD_MARK) and '"markdown"' in systems[-1]
+    fix_audit = [a for a in container.repo.list_audit() if a.action == "document.fix_weak"]
+    assert fix_audit[0].detail["custom_prompt"] is True and "表" not in json.dumps(fix_audit[0].detail)
 
     # AIで採点: body {} → 5 trang điểm thấp nhất (ở đây 3 trang)
     r = client.post(f"/api/documents/{doc_id}/score", json={}, headers=H)

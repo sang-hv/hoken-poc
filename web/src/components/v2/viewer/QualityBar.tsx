@@ -3,10 +3,11 @@ import { AlertTriangle, ChevronRight, Gauge, Sparkles, Wand2 } from "lucide-reac
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
-import { ConfirmDialog, useToastError } from "@/components/common";
+import { useToastError } from "@/components/common";
 import { Badge, Button, Dialog, Skeleton, Tip } from "@/components/ui";
 import { api } from "@/lib/api";
 import type { DocQuality, PageScore, WeakCode } from "@/lib/v2types";
+import { FixWeakDialog } from "./FixWeakDialog";
 import { GradeChip, WeakChip, vk } from "./shared";
 
 /** Thứ tự hiển thị chip điểm yếu. */
@@ -48,9 +49,9 @@ export function QualityBar({
   const open = quality?.weak_open ?? 0;
   const codes = CODE_ORDER.filter((c) => (quality?.counts[c] ?? 0) > 0);
 
-  const fixWeak = async () => {
+  const fixWeak = async (prompt: string) => {
     try {
-      const r = await api.post<{ queued: number }>(`/documents/${docId}/fix-weak`);
+      const r = await api.post<{ queued: number }>(`/documents/${docId}/fix-weak`, { prompt });
       toast.success(t("viewer.quality.fixQueued", { n: r?.queued ?? open }));
       qc.invalidateQueries({ queryKey: vk.all(docId) });
       onStartPolling();
@@ -132,14 +133,7 @@ export function QualityBar({
         </div>
       )}
 
-      <ConfirmDialog
-        open={fixOpen}
-        onOpenChange={setFixOpen}
-        title={t("viewer.quality.fixTitle")}
-        description={t("viewer.quality.fixDesc", { n: open })}
-        confirmLabel={t("viewer.quality.fixRun")}
-        onConfirm={fixWeak}
-      />
+      <FixWeakDialog docId={docId} weakOpen={open} open={fixOpen} onOpenChange={setFixOpen} onRun={fixWeak} />
 
       <Dialog
         open={scores !== null}

@@ -48,6 +48,10 @@ class RereadIn(BaseModel):
     prompt: str = Field(default="", max_length=2000)
 
 
+class FixWeakIn(BaseModel):
+    prompt: str = Field(default="", max_length=svc.REREAD_MAX)
+
+
 class ScoreIn(BaseModel):
     pages: list[int] | None = None
 
@@ -88,13 +92,27 @@ def weak(doc_id: str, c: Container = Depends(container), _: User = Depends(viewe
     return _call(svc.weak_items, c, doc_id)
 
 
+@router.get("/{doc_id}/fix-weak")
+def fix_weak_info(doc_id: str, c: Container = Depends(container), _: User = Depends(viewer)):
+    """Cho hộp thoại 「弱点をAIで修正」: hướng dẫn mặc định (settings) + số phần tử sẽ đọc lại."""
+    targets = _call(svc.weak_targets, c, doc_id)
+    return {"prompt": svc.reread_guide(c), "weak": len(targets)}
+
+
 @router.post("/{doc_id}/fix-weak")
-def fix_weak(doc_id: str, tasks: BackgroundTasks, c: Container = Depends(container), user: User = Depends(reviewer)):
-    """Đọc lại mọi phần tử weak bằng VLM — chạy nền sau khi trả lời (PoC: trong tiến trình API)."""
+def fix_weak(
+    doc_id: str,
+    tasks: BackgroundTasks,
+    body: FixWeakIn | None = None,
+    c: Container = Depends(container),
+    user: User = Depends(reviewer),
+):
+    """Đọc lại mọi phần tử weak bằng VLM — chạy nền sau khi trả lời (PoC: trong tiến trình API).
+    `prompt` rỗng → dùng `quality.reread_prompt` trong settings."""
     _call(svc._llm, c)
     targets = _call(svc.weak_targets, c, doc_id)
     if targets:
-        tasks.add_task(svc.fix_weak, c, doc_id, user.email, targets)
+        tasks.add_task(svc.fix_weak, c, doc_id, user.email, targets, body.prompt if body else "")
     return {"queued": len(targets)}
 
 

@@ -437,7 +437,7 @@ function PipelineTab() {
       </div>
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
         {Object.entries(opts).map(([section, values]) => (
-          <Card key={section} className={section === "chunk" || section === "cu" || section === "chat" ? "xl:col-span-2" : ""}>
+          <Card key={section} className={["chunk", "cu", "chat", "quality"].includes(section) ? "xl:col-span-2" : ""}>
             <CardHeader>
               <CardTitle>{t(`settings.sections.${section}`, { defaultValue: section })}</CardTitle>
               {section === "routing" && <CardDescription>{t("routing.desc")}</CardDescription>}

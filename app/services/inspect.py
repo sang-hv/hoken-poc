@@ -56,13 +56,20 @@ REREAD_MARK = "[hoken:element-reread]"
 SCORE_MARK = "[hoken:page-score]"
 INSIGHTS_MARK = "[hoken:insights]"
 
-REREAD_PROMPT = (
-    f"{REREAD_MARK} You transcribe ONE cropped region of a page of a Japanese dental insurance document "
-    "(public MHLW material) into Markdown. Keep all Japanese text, item codes (e.g. M015-2) and numbers/点 exactly "
-    "as in the image. Tables → Markdown table; flowcharts/diagrams → Mermaid inside ```mermaid; other pictures → "
-    "a short factual description. Headings keep their # level. "
-    'Return JSON {"markdown": string, "confidence": number between 0 and 1 (how sure you are of the reading)}.'
-)
+REREAD_MAX = 4000  # độ dài tối đa của hướng dẫn đọc lại người dùng nhập
+
+
+def reread_system(guide: str) -> str:
+    """System prompt đọc lại: dấu + vai trò + hướng dẫn (settings `quality.reread_prompt` hoặc người dùng sửa)
+    + khung JSON cố định (để luôn parse được)."""
+    return (
+        f"{REREAD_MARK} You transcribe ONE cropped region of a page of a Japanese dental insurance document "
+        "(public MHLW material) into Markdown.\n\n"
+        f"{guide.strip()}\n\n"
+        'Return JSON {"markdown": string, "confidence": number between 0 and 1 (how sure you are of the reading)}.'
+    )
+
+
 SCORE_PROMPT = (
     f"{SCORE_MARK} You grade OCR quality. You get one page image of a Japanese dental insurance document and the "
     "Markdown extracted from it. Compare them: missing or wrong text, wrong numbers/点, broken tables, missing "
@@ -437,12 +444,22 @@ def _parse_json(text: str) -> dict:
         return {}
 
 
-def _vlm_read(llm, png: bytes, e: dict, prompt: str = "") -> tuple[str, float | None]:
+def reread_guide(c: Container, override: str = "") -> str:
+    """Hướng dẫn đọc lại dùng cho lần chạy này: người dùng nhập (nếu có) hoặc mặc định trong settings."""
+    return override.strip() or _opts(c).quality.reread_prompt
+
+
+def _vlm_read(llm, png: bytes, e: dict, prompt: str = "", guide: str = "") -> tuple[str, float | None]:
     user = f"Region type: {e['label']}\nCurrent text:\n{e.get('text') or e.get('raw_text') or '(empty)'}"
     if prompt:
         user += f"\n\nInstruction from reviewer:\n{prompt}"
+    from app.domain.options import DEFAULT_REREAD_PROMPT
+
     res = llm.chat(
-        [ChatMessage("system", REREAD_PROMPT), ChatMessage("user", user, [crop_png(png, e["bbox"])])],
+        [
+            ChatMessage("system", reread_system(guide or DEFAULT_REREAD_PROMPT)),
+            ChatMessage("user", user, [crop_png(png, e["bbox"])]),
+        ],
         tier="vision",
         json_mode=True,
         max_tokens=4000,
@@ -477,7 +494,7 @@ def reread_element(c: Container, doc_id: str, n: int, eid: str, prompt: str, act
     llm = _llm(c)
     state = load_state(c, doc, p)
     e = _element(state, eid)
-    md, conf = _vlm_read(llm, _page_png(c, doc_id, n), e, prompt)
+    md, conf = _vlm_read(llm, _page_png(c, doc_id, n), e, prompt, reread_guide(c))
     summary = _apply_reread(e, md, conf, actor, auto=False)
     v = _commit(c, doc, p, state, "element_reread", actor, eid)
     _log(
@@ -508,10 +525,14 @@ def weak_targets(c: Container, doc_id: str) -> list[tuple[int, str]]:
     return out
 
 
-def fix_weak(c: Container, doc_id: str, actor: str, targets: list[tuple[int, str]] | None = None) -> int:
-    """AI đọc lại mọi phần tử còn weak (người bấm 「弱点をAIで修正」 → status fixed). Trả số phần tử đã đọc lại."""
+def fix_weak(
+    c: Container, doc_id: str, actor: str, targets: list[tuple[int, str]] | None = None, prompt: str = ""
+) -> int:
+    """AI đọc lại mọi phần tử còn weak (người bấm 「弱点をAIで修正」 → status fixed). Trả số phần tử đã đọc lại.
+    `prompt`: hướng dẫn người dùng sửa cho lần chạy này; rỗng → `quality.reread_prompt` trong settings."""
     doc = _doc(c, doc_id)
     llm = _llm(c)
+    guide = reread_guide(c, prompt)
     targets = weak_targets(c, doc_id) if targets is None else targets
     by_page: dict[int, list[str]] = {}
     for n, eid in targets:
@@ -529,7 +550,7 @@ def fix_weak(c: Container, doc_id: str, actor: str, targets: list[tuple[int, str
             if e is None or e.get("status") != "weak":
                 continue
             try:
-                md, conf = _vlm_read(llm, png, e)
+                md, conf = _vlm_read(llm, png, e, guide=guide)
             except Exception as ex:  # noqa: BLE001 — một phần tử lỗi không chặn phần còn lại
                 log.warning("inspect.fix_failed doc=%s page=%s element=%s error=%s", doc_id, n, eid, type(ex).__name__)
                 continue
@@ -547,7 +568,7 @@ def fix_weak(c: Container, doc_id: str, actor: str, targets: list[tuple[int, str
                 {"at": at, "by": actor, "kind": "element_reread", "element_id": eid, "summary": f"{s} · v{v}"},
             )
         done += len(changed)
-    c.repo.audit(actor, "document.fix_weak", doc_id, elements=done)
+    c.repo.audit(actor, "document.fix_weak", doc_id, elements=done, custom_prompt=bool(prompt.strip()))
     if done:
         _after_change(c, _doc(c, doc_id), actor)
     return done
@@ -679,6 +700,7 @@ def prepare_document(c, doc_id: str) -> None:
     lượng. Lỗi dựng phần tử của một trang được ném ra (bước auto_review ghi `auto.prepare_failed`)."""
     doc = _doc(c, doc_id)
     q = _opts(c).quality
+    guide = q.reread_prompt
     try:
         llm = c.config.adapter("llm")
     except NotConfigured:
@@ -704,7 +726,7 @@ def prepare_document(c, doc_id: str) -> None:
         changed = []
         for e in low:
             try:
-                md, conf = _vlm_read(llm, png, e)
+                md, conf = _vlm_read(llm, png, e, guide=guide)
             except Exception as ex:  # noqa: BLE001 — VLM lỗi: giữ bản đọc cũ, phần tử vẫn weak
                 log.warning(
                     "inspect.auto_reread_failed doc=%s page=%s element=%s error=%s",

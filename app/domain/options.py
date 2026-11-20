@@ -101,6 +101,13 @@ class ChatOptions(BaseModel):
     max_history: int = 6  # số lượt hỏi đáp trước đó gửi kèm
 
 
+DEFAULT_REREAD_PROMPT = (
+    "Keep all Japanese text, item codes (e.g. M015-2) and numbers/点 exactly as in the image. "
+    "Tables → Markdown table; flowcharts/diagrams → Mermaid inside ```mermaid; other pictures → "
+    "a short factual description. Headings keep their # level."
+)
+
+
 class QualityOptions(BaseModel):
     """Chấm chất lượng sau pipeline + phát hiện điểm yếu (UI v2, tab 検査). Chủ: backend A2."""
 
@@ -109,6 +116,9 @@ class QualityOptions(BaseModel):
     picture_needs_description: bool = True  # hình chưa có mô tả → điểm yếu picture_no_desc
     grade_good: int = 85  # điểm trang/tài liệu ≥ mức này = good (良好)
     grade_fair: int = 60  # ≥ mức này = fair (要注意), thấp hơn = poor (不良)
+    # Hướng dẫn cho AI khi đọc lại phần tử (tự đọc lại trong pipeline, 「弱点をAIで修正」, đọc lại từng phần tử).
+    # Người dùng sửa được cho từng lần chạy 「弱点をAIで修正」; khung JSON trả về cố định trong code.
+    reread_prompt: str = DEFAULT_REREAD_PROMPT
 
 
 class PipelineOptions(BaseModel):

@@ -602,6 +602,7 @@ const en = {
       auto_review: "Run the pipeline automatically (warnings only, no manual approval)",
       weak_confidence: "Warn below this confidence",
       auto_vlm_below: "Re-read with the vision model below this confidence",
+      reread_prompt: "AI re-read instructions (default for 「Fix weak spots with AI」 and auto re-read)",
       picture_needs_description: "Warn when a figure has no description",
       grade_good: "Score for 'good' (≥)",
       grade_fair: "Score for 'needs attention' (≥)",

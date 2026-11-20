@@ -603,6 +603,7 @@ const ja: Messages = {
       auto_review: "パイプラインを自動実行（承認作業なし・警告のみ表示）",
       weak_confidence: "この信頼度未満は警告",
       auto_vlm_below: "この信頼度未満は Vision モデルで再読込",
+      reread_prompt: "AI再読込の指示（「弱点をAIで修正」・自動再読込の既定値）",
       picture_needs_description: "説明のない図を警告",
       grade_good: "「良好」とする点数（以上）",
       grade_fair: "「要注意」とする点数（以上）",
