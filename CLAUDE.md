@@ -10,8 +10,11 @@ Skill của repo (đọc trước khi sửa): `.claude/skills/architecture`, `.c
 - **Prod**: mọi dữ liệu lưu và xử lý tại Nhật — Azure Japan East, deployment Standard (không Global / Data Zone);
   dự phòng Bedrock profile `jp.`. **Dev** được linh hoạt, miễn là dùng dịch vụ Content Understanding (Azure) và LLM.
 - **Content Understanding luôn là Azure**, kể cả khi phần hạ tầng còn lại chạy Local hoặc AWS.
-- **Mọi trang OCR và mọi chunk đều phải qua người review** (sửa trực tiếp rồi Submit), dù confidence cao hay thấp.
-  Confidence chỉ để sắp xếp/tô màu.
+- **Pipeline tự chạy từ đầu đến cuối** (OCR → chunk → embedding → index), không chờ người duyệt
+  (tài liệu `auto_review = true`, mặc định cho tài liệu tải lên từ sổ tay).
+  Phần tử có confidence **dưới ngưỡng cài đặt** (`quality.auto_vlm_below` → AI tự đọc lại; `quality.weak_confidence`
+  → gắn ⚠ cảnh báo) thì hiện cho người dùng **sửa** (→ tự chunk + index lại) hoặc **bỏ qua** (xác nhận đúng).
+  Cảnh báo không chặn pipeline. Màn 文書 cũ (`auto_review = false`) vẫn duyệt tay từng trang / chunk.
 - Câu chatbot không trả lời được thì chuyển bộ phận CSKH (khu B).
 - Repo chỉ chứa tài liệu công khai của MHLW. Không commit dữ liệu bệnh nhân, dữ liệu khách hay câu hỏi khách.
 - Không commit key hay endpoint thật. Log và live log chỉ ghi mã + id/trang/mã mục/lý do, không chép nội dung tài liệu.
@@ -35,7 +38,8 @@ Skill của repo (đọc trước khi sửa): `.claude/skills/architecture`, `.c
 
 ## Pipeline khu A
 Upload → Docling (điểm confidence từng trang) → định tuyến → [CU + vision cho trang khó] → nối trang →
-**review OCR** → cắt thô theo mã mục → LLM chunk ↔ kiểm tra luật (≤ 20 vòng) → confidence → **review chunk** → embedding → index.
+kiểm tra chất lượng (tự đọc lại / gắn ⚠) → cắt thô theo mã mục → LLM chunk ↔ kiểm tra luật (≤ 20 vòng) → confidence →
+embedding → index. Người dùng xử lý ⚠ song song (sửa / bỏ qua), không chặn luồng.
 
 Trang **dễ** khi: Docling `low_grade` ≥ GOOD (`low_score ≥ 0.8`), `parse_score ≥ 0.8`, không phải OCR,
 không có bảng gộp ô / bảng tràn trang, không có hình lớn (sau khi bỏ logo, con dấu, chữ ký). Ngưỡng chỉnh trong Admin.

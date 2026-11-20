@@ -31,10 +31,13 @@ python -m app.main serve | worker --queues docling,ai,light | job --queues ai --
   Không bao giờ đưa nội dung tài liệu, prompt người dùng hay câu hỏi khách vào params.
 - Mã mới phải có bản dịch trong `web/src/i18n/en.ts` và `ja.ts` (`events.<mã>`).
 
-## Review là bắt buộc
-- Mọi trang qua `review` → `approved`; mọi chunk `draft` → `approved` trước khi index.
-  Confidence chỉ để sắp xếp/tô màu, **không** dùng để tự duyệt.
-- Sửa OCR sau khi đã chunk → `_invalidate_chunks` đưa tài liệu về `ocr_review`.
+## Review: tự động trước, người xử lý ngoại lệ
+- Tài liệu `auto_review = true` (mặc định từ sổ tay): pipeline tự chạy hết — `stitch` → `auto_review`
+  (dựng phần tử, tự đọc lại dưới `quality.auto_vlm_below`, gắn điểm yếu dưới `quality.weak_confidence`,
+  tự duyệt trang với người duyệt `auto`) → `chunk` → tự `index`. Điểm yếu **không** chặn luồng; người dùng sửa
+  (→ `notebooks.reindex_document`: chunk + index lại) hoặc xác nhận (`inspect.accept_element`) ở màn 検査.
+- Tài liệu `auto_review = false` (màn 文書 cũ): mọi trang qua `review` → `approved`; mọi chunk `draft` → `approved`
+  trước khi index. Sửa OCR sau khi đã chunk → `_invalidate_chunks` đưa tài liệu về `ocr_review`.
 
 ## API
 - Lỗi nghiệp vụ: `raise PipelineError("mã", **params)` → 409 `{detail: {code, ...}}`; UI dịch theo `errors.<mã>`.
