@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+from app.core.text import nfkc
 from app.domain.models import Chunk, ChunkStatus, DocStatus
 from app.domain.options import ChunkOptions
 from app.services.container import Container
 from app.services.jobs import emit
-from app.services.pipeline import PipelineError, refresh_doc, start_index
+from app.services.pipeline import PipelineError, chunk_flag_threshold, chunk_flagged, refresh_doc, start_index
 from app.steps import rules
 
 
@@ -169,3 +170,68 @@ def approve_chunks(c: Container, doc_id: str, ids: list[str], approved: bool, ac
     c.repo.audit(actor, "chunk.approve" if approved else "chunk.unapprove", doc_id, count=n)
     _back_to_review(c, doc)
     return n
+
+
+# ================================================================ danh sách chunk (tab チャンク), phân trang ở server
+PREVIEW_CHARS = 120
+LIST_MAX = 200
+
+
+def _preview(text: str) -> str:
+    one = " ".join(text.replace("|", " ").replace("#", " ").split())
+    return one[:PREVIEW_CHARS]
+
+
+def chunk_summary(ch: Chunk, threshold: float) -> dict:
+    """Dòng danh sách: không có nội dung đầy đủ (chỉ preview) để tài liệu nhiều chunk vẫn nhẹ."""
+    return {
+        "id": ch.id,
+        "seq": ch.seq,
+        "item_code": ch.item_code,
+        "title": ch.title,
+        "preview": _preview(ch.text),
+        "page_from": ch.page_from,
+        "page_to": ch.page_to,
+        "confidence": ch.confidence,
+        "violations": ch.violations,
+        "status": ch.status.value,
+        "flagged": chunk_flagged(ch, threshold),
+        "updated_at": ch.updated_at,
+    }
+
+
+def list_chunk_summaries(
+    c: Container,
+    doc_id: str,
+    *,
+    offset: int = 0,
+    limit: int = 100,
+    q: str = "",
+    flt: str = "all",
+    book_page: int | None = None,
+    focus: str = "",
+) -> dict:
+    """Danh sách chunk theo thứ tự, lọc (all | issues = cần xem), tìm (mã mục / tiêu đề / nội dung, NFKC, không phân
+    biệt hoa thường), lọc theo trang sách; trả một khối [offset, offset+limit) + tổng + số đếm. `focus` → vị trí của
+    chunk đó trong danh sách đã lọc (để UI cuộn tới). PoC: lọc trong bộ nhớ — đủ nhanh tới vài chục nghìn chunk."""
+    th = chunk_flag_threshold(c)
+    chunks = c.repo.list_chunks(doc_id)
+    issues = sum(1 for x in chunks if chunk_flagged(x, th))
+    sel = chunks
+    if flt == "issues":
+        sel = [x for x in sel if chunk_flagged(x, th)]
+    if book_page is not None:
+        sel = [x for x in sel if x.page_from <= book_page <= x.page_to]
+    needle = nfkc(q).lower().strip()
+    if needle:
+        sel = [x for x in sel if needle in nfkc(f"{x.item_code} {x.title} {x.text}").lower()]
+    limit = max(1, min(LIST_MAX, limit))
+    offset = max(0, offset)
+    focus_index = next((i for i, x in enumerate(sel) if x.id == focus), None) if focus else None
+    return {
+        "total": len(sel),
+        "counts": {"all": len(chunks), "issues": issues},
+        "offset": offset,
+        "items": [chunk_summary(x, th) for x in sel[offset : offset + limit]],
+        "focus_index": focus_index,
+    }

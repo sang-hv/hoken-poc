@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { EmptyState, buttonVariants } from "@/components/ui";
+import { ck } from "@/components/v2/viewer/ChunkList";
 import { ChunksTab } from "@/components/v2/viewer/ChunksTab";
 import { InsightsTab } from "@/components/v2/viewer/InsightsTab";
 import { InspectTab } from "@/components/v2/viewer/InspectTab";
@@ -32,6 +33,8 @@ const DONE_STATUSES = ["indexed", "failed"];
 /** Số dòng live log giữ trong bộ nhớ / DOM. Server gửi lại 200 dòng gần nhất khi kết nối. */
 const LOG_MAX = 500;
 /** Sự kiện chỉ báo tiến độ, không đổi nội dung trang / phần tử / chất lượng. */
+/** Sự kiện làm đổi danh sách chunk (tab チャンク tải lại danh sách — không tải lại theo mọi sự kiện). */
+const CHUNK_EVENTS = /^(chunk\.(done|partial|edited|merged|split|approved|unapproved|approved_all|invalidated)$|auto\.(chunks_approved|no_chunks)$|index\.done$|review\.hold_chunk$)/;
 const PROGRESS_ONLY = /^(job\.|cu\.started$|chunk\.(rough|round|section)$|index\.progress$)/;
 
 export default function DocumentViewerPage() {
@@ -130,10 +133,12 @@ export default function DocumentViewerPage() {
   // lại khi có sự kiện làm đổi nội dung — tài liệu lớn không bị tải lại chất lượng mỗi 1.5 s lúc đang index.
   const throttle = useRef<number | undefined>(undefined);
   const contentChanged = useRef(false);
+  const chunksChanged = useRef(false);
   useEffect(() => () => window.clearTimeout(throttle.current), []);
   const onEvent = useCallback(
     (e: JobEvent) => {
       if (!PROGRESS_ONLY.test(e.code)) contentChanged.current = true;
+      if (CHUNK_EVENTS.test(e.code)) chunksChanged.current = true;
       if (throttle.current !== undefined) return;
       throttle.current = window.setTimeout(() => {
         throttle.current = undefined;
@@ -142,6 +147,11 @@ export default function DocumentViewerPage() {
           contentChanged.current = false;
           qc.invalidateQueries({ queryKey: vk.all(docId) });
           qc.invalidateQueries({ queryKey: vk.pages(docId) }); // trạng thái duyệt trang (tab 検査)
+        }
+        if (chunksChanged.current) {
+          chunksChanged.current = false;
+          qc.invalidateQueries({ queryKey: ck.list(docId) });
+          qc.invalidateQueries({ queryKey: ["chunk", docId] });
         }
       }, 1500);
     },

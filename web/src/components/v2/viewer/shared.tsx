@@ -39,7 +39,6 @@ export const vk = {
   chunks: (doc: string, page: number) => ["inspect", doc, "chunks", page] as const,
   history: (doc: string, page: number) => ["inspect", doc, "history", page] as const,
   pages: (doc: string) => ["pages", doc] as const, // dùng chung với màn cũ
-  docChunks: (doc: string) => ["inspect", doc, "doc-chunks"] as const,
 };
 
 /** Sau khi sửa / đọc lại / xác nhận một phần tử: làm mới những gì phụ thuộc vào nó. */
@@ -68,13 +67,6 @@ export function useDocMeta(doc: string) {
 /** Chunk lưu trang SÁCH; viewer đánh số trang PDF. */
 export function bookToPdf(doc: Pick<Doc, "book_page_start" | "page_from">, book: number) {
   return book - doc.book_page_start + doc.page_from;
-}
-export function useDocChunks(doc: string) {
-  return useQuery({
-    queryKey: vk.docChunks(doc),
-    queryFn: () => api.get<Chunk[]>(`/documents/${doc}/chunks`),
-    retry: noRetry4xx,
-  });
 }
 export function useQuality(doc: string, poll = false) {
   return useQuery({

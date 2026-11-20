@@ -132,3 +132,27 @@ export interface ChunkRegions {
     elements: { id: string; order: number; label: ElementLabel; bbox: [number, number, number, number]; coverage: number }[];
   }[];
 }
+
+/** Dòng danh sách tab チャンク (GET /documents/{doc}/chunks/list) — không có nội dung đầy đủ. */
+export interface ChunkSummary {
+  id: string;
+  seq: number;
+  item_code: string;
+  title: string;
+  preview: string;
+  page_from: number; // trang sách
+  page_to: number;
+  confidence: number;
+  violations: string[];
+  status: "draft" | "approved" | "indexed";
+  flagged: boolean;
+  updated_at: string;
+}
+
+export interface ChunkListPage {
+  total: number; // sau khi lọc
+  counts: { all: number; issues: number };
+  offset: number;
+  items: ChunkSummary[];
+  focus_index: number | null;
+}

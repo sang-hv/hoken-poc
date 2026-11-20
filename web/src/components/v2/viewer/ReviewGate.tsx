@@ -62,6 +62,8 @@ function useApproveAll(doc: Doc, onDone: () => void) {
       qc.invalidateQueries({ queryKey: ["document", doc.id] });
       qc.invalidateQueries({ queryKey: vk.all(doc.id) });
       qc.invalidateQueries({ queryKey: vk.pages(doc.id) });
+      qc.invalidateQueries({ queryKey: ["chunks-list", doc.id] });
+      qc.invalidateQueries({ queryKey: ["chunk", doc.id] });
     } catch (e) {
       toastError(e);
     } finally {

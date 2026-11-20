@@ -416,3 +416,48 @@ def test_legacy_auto_review_setting_maps_to_mode():
     assert ReviewOptions.model_validate({"auto_review": False}).mode == "manual"
     assert ReviewOptions.model_validate({"auto_review": True}).mode == "warn"
     assert ReviewOptions().mode == "warn"
+
+
+def test_chunk_list_is_paginated_filtered_and_light(client, container, sample_pdf, monkeypatch):
+    """Tab チャンク: danh sách tóm tắt (không có nội dung đầy đủ), phân trang, lọc cần xem, tìm, theo trang, focus."""
+    c = container
+    _search_ready(c)
+    set_review_mode(c, "auto")
+    doc_id = client.post("/api/documents", files={"file": ("s.pdf", sample_pdf, "application/pdf")}, headers=H).json()[
+        "id"
+    ]
+    drain(c)
+    chunks = c.repo.list_chunks(doc_id)
+    n = len(chunks)
+    assert n >= 3
+    base = f"/api/documents/{doc_id}/chunks/list"
+    r = client.get(base, params={"limit": 2}).json()
+    assert r["total"] == n and r["counts"]["all"] == n and len(r["items"]) == 2 and r["offset"] == 0
+    item = r["items"][0]
+    assert "text" not in item and len(item["preview"]) <= 120 and item["seq"] == 1
+    assert set(item) >= {"id", "item_code", "page_from", "page_to", "confidence", "flagged", "status"}
+    r2 = client.get(base, params={"limit": 2, "offset": 2}).json()
+    assert [x["seq"] for x in r2["items"]] == list(range(3, min(n, 4) + 1))
+    # tìm theo mã mục / nội dung (không phân biệt hoa thường)
+    a000 = client.get(base, params={"q": "a000"}).json()
+    assert a000["total"] >= 1 and all("A000" in (x["item_code"] + x["preview"]) for x in a000["items"])
+    # theo trang PDF 3 → chỉ chunk phủ trang 3
+    p3 = client.get(base, params={"page": 3}).json()
+    assert p3["total"] >= 1 and all(x["page_from"] <= 3 <= x["page_to"] for x in p3["items"])
+    # lọc cần xem: ép chunk seq 1 bị đánh dấu
+    monkeypatch.setattr(chunk_flagged_target(), "chunk_flagged", lambda ch, th: ch.seq == 1)
+    iss = client.get(base, params={"filter": "issues"}).json()
+    assert iss["total"] == 1 and iss["counts"]["issues"] == 1 and iss["items"][0]["seq"] == 1
+    # focus → vị trí trong danh sách đã lọc
+    last = chunks[-1]
+    assert client.get(base, params={"focus": last.id, "limit": 1}).json()["focus_index"] == n - 1
+    one = client.get(f"/api/documents/{doc_id}/chunks/{last.id}").json()
+    assert one["id"] == last.id and one["text"] == last.text and one["next_id"] is None
+    assert client.get(f"/api/documents/{doc_id}/chunks/{chunks[0].id}").json()["next_id"] == chunks[1].id
+    assert client.get(f"/api/documents/{doc_id}/chunks/nope").status_code == 404
+
+
+def chunk_flagged_target():
+    from app.services import chunks as chunk_svc
+
+    return chunk_svc

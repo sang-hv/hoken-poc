@@ -301,6 +301,35 @@ class SplitIn(BaseModel):
     offset: int
 
 
+@router.get("/{doc_id}/chunks/list")
+def list_chunk_summaries(
+    doc_id: str,
+    offset: int = 0,
+    limit: int = 100,
+    q: str = "",
+    filter: str = "all",
+    page: int | None = None,
+    focus: str = "",
+    c: Container = Depends(container),
+    _: User = Depends(viewer),
+):
+    """Tab チャンク: danh sách tóm tắt có phân trang. `page` = trang PDF (đổi sang trang sách)."""
+    d = _doc(c, doc_id)
+    book = d.book_page(page) if page else None
+    return chunk_svc.list_chunk_summaries(
+        c, doc_id, offset=offset, limit=limit, q=q, flt=filter, book_page=book, focus=focus
+    )
+
+
+@router.get("/{doc_id}/chunks/{chunk_id}")
+def get_chunk(doc_id: str, chunk_id: str, c: Container = Depends(container), _: User = Depends(viewer)):
+    ch = c.repo.get_chunk(doc_id, chunk_id)
+    if not ch:
+        raise HTTPException(404, {"code": "chunk_not_found"})
+    nxt = next((x for x in c.repo.list_chunks(doc_id) if x.seq == ch.seq + 1), None)
+    return {**ch.model_dump(mode="json"), "next_id": nxt.id if nxt else None}  # cho nút 「次と結合」
+
+
 @router.put("/{doc_id}/chunks/{chunk_id}")
 def update_chunk(
     doc_id: str, chunk_id: str, body: ChunkIn, c: Container = Depends(container), user: User = Depends(reviewer)

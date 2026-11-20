@@ -1,7 +1,8 @@
-/** Tab チャンク (cấp tài liệu): toàn bộ chunk theo thứ tự, dải trang (chunk có thể trải nhiều trang), điểm,
- *  vi phạm luật, ⚠ khi trang của chunk còn điểm yếu. Sửa / tách / gộp với chunk sau; tài liệu tự chạy → lưu xong
- *  tự duyệt + index lại (backend). Route: /documents/:docId?tab=chunks&chunk=<id> */
-import { useQueryClient } from "@tanstack/react-query";
+/** Tab チャンク (cấp tài liệu): danh sách chunk (phân trang ở server + danh sách ảo — chịu được hàng nghìn chunk),
+ *  dải trang (chunk có thể trải nhiều trang), điểm, vi phạm luật, ⚠ khi trang của chunk còn điểm yếu. Sửa / tách /
+ *  gộp với chunk sau; tài liệu tự chạy → lưu xong tự duyệt + index lại (backend).
+ *  Route: /documents/:docId?tab=chunks&chunk=<id> */
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
   Check,
@@ -23,19 +24,19 @@ import { toast } from "sonner";
 import { Markdown, useToastError } from "@/components/common";
 import { ConfidenceBadge } from "@/components/status";
 import { Badge, Button, EmptyState, Field, Input, Skeleton, Textarea, Tip } from "@/components/ui";
-import { api } from "@/lib/api";
+import { ApiError, api } from "@/lib/api";
 import { useDebounced } from "@/lib/hooks";
 import type { Chunk, Doc } from "@/lib/types";
+import type { ChunkSummary } from "@/lib/v2types";
 import { cn } from "@/lib/utils";
 import { ChunkCompareDialog } from "./ChunkCompareDialog";
+import { type ChunkFilter, ChunkList, type ChunkListParams, ck, useChunkHead, useChunkIndex } from "./ChunkList";
 import { reviewStage } from "./ReviewGate";
-import { QueryError, type ViewerTab, bookToPdf, useDocChunks, useDocMeta, useQuality, vk } from "./shared";
+import { QueryError, type ViewerTab, bookToPdf, useDocMeta, useQuality, vk } from "./shared";
 
-type Filter = "all" | "issues";
-const LOW_CONFIDENCE = 0.7;
 const EDITABLE = ["chunk_review", "indexed"];
 
-function pdfRange(doc: Doc | undefined, c: Chunk): [number, number] {
+function pdfRange(doc: Doc | undefined, c: Pick<Chunk, "page_from" | "page_to">): [number, number] {
   return doc ? [bookToPdf(doc, c.page_from), bookToPdf(doc, c.page_to)] : [c.page_from, c.page_to];
 }
 
@@ -56,52 +57,64 @@ export function ChunksTab({
   const qc = useQueryClient();
   const toastError = useToastError();
   const doc = useDocMeta(docId);
-  const chunks = useDocChunks(docId);
   const quality = useQuality(docId);
-  const [filter, setFilter] = useState<Filter>("all");
+  const d = doc.data;
+  const reviewing = reviewStage(d) === "chunk";
+
+  // Bộ lọc: đang dừng ở チャンクレビュー → mặc định chỉ hiện chunk cần xem
+  const [filter, setFilter] = useState<ChunkFilter | null>(null);
+  useEffect(() => {
+    if (d && filter === null) setFilter(reviewing ? "issues" : "all");
+  }, [d, filter, reviewing]);
   const [query, setQuery] = useState("");
-  const q = useDebounced(query.trim().toLowerCase(), 250);
+  const [pageText, setPageText] = useState("");
+  const q = useDebounced(query.trim(), 300);
+  const pageNum = useDebounced(Number(pageText) > 0 ? Math.floor(Number(pageText)) : null, 300);
+  const params: ChunkListParams = { filter: filter ?? "all", q, page: pageNum };
+
+  const head = useChunkHead(docId, params, filter !== null);
+  const total = head.data?.total ?? 0;
+  const counts = head.data?.counts ?? { all: d?.stats.chunks ?? 0, issues: d?.stats.chunks_flagged ?? 0 };
+  const focusIndex = useChunkIndex(docId, params, selectedId);
+  const chunk = useQuery({
+    queryKey: ck.one(docId, selectedId ?? ""),
+    queryFn: () => api.get<Chunk & { next_id: string | null }>(`/documents/${docId}/chunks/${selectedId}`),
+    enabled: !!selectedId,
+    retry: (n, e) => !(e instanceof ApiError && e.status === 404) && n < 2,
+  });
+  const active = chunk.data ?? null;
+
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({ text: "", item_code: "", title: "" });
   const [busy, setBusy] = useState<string | null>(null);
   const textRef = useRef<HTMLTextAreaElement>(null);
   /** Popup 原本と比較 đang mở ở trang PDF này (null = đóng) */
   const [compare, setCompare] = useState<number | null>(null);
-  const listRef = useRef<HTMLUListElement>(null);
 
-  const d = doc.data;
-  const all = chunks.data ?? [];
   /** Trang PDF còn điểm yếu chưa xử lý */
   const weakPages = useMemo(
     () => new Set((quality.data?.pages ?? []).filter((p) => p.weak_open > 0).map((p) => p.page)),
     [quality.data],
   );
-  const weakIn = (c: Chunk) => {
+  const weakIn = (c: Pick<Chunk, "page_from" | "page_to">) => {
     const [a, b] = pdfRange(d, c);
     const out: number[] = [];
     for (let p = a; p <= b; p++) if (weakPages.has(p)) out.push(p);
     return out;
   };
-  const isIssue = (c: Chunk) => c.violations.length > 0 || c.confidence < LOW_CONFIDENCE || weakIn(c).length > 0;
-  const issues = all.filter(isIssue).length;
-  const list = all
-    .filter((c) => filter === "all" || isIssue(c))
-    .filter((c) => !q || `${c.item_code} ${c.title} ${c.text}`.toLowerCase().includes(q));
-  const active = all.find((c) => c.id === selectedId) ?? null;
   const editable = canEdit && !!d && EDITABLE.includes(d.status);
-  const next = active ? all.find((c) => c.seq === active.seq + 1) : undefined;
+  const next = active?.next_id ? { id: active.next_id, seq: active.seq + 1 } : undefined;
 
-  // Chưa chọn (hoặc chunk đã bị gộp mất) → chọn chunk đầu danh sách
+  // Chưa chọn, hoặc chunk đã bị gộp / xoá → chọn dòng đầu danh sách
+  const first = head.data?.items[0]?.id;
+  const missing = chunk.error instanceof ApiError && chunk.error.status === 404;
   useEffect(() => {
-    if (all.length && !active) onSelect((list[0] ?? all[0]).id);
-  }, [all, active, list, onSelect]);
+    if (first && (!selectedId || missing)) onSelect(first);
+  }, [first, selectedId, missing, onSelect]);
   useEffect(() => {
     setEditing(false);
     if (active) setForm({ text: active.text, item_code: active.item_code, title: active.title });
   }, [active?.id, active?.updated_at]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => {
-    listRef.current?.querySelector(`[data-chunk="${selectedId}"]`)?.scrollIntoView({ block: "nearest" });
-  }, [selectedId]);
 
   const dirty =
     !!active && (form.text !== active.text || form.item_code !== active.item_code || form.title !== active.title);
@@ -112,6 +125,8 @@ export function ChunksTab({
       await fn();
       if (ok) toast.success(ok);
       setEditing(false);
+      qc.invalidateQueries({ queryKey: ck.list(docId) });
+      qc.invalidateQueries({ queryKey: ["chunk", docId] });
       qc.invalidateQueries({ queryKey: vk.all(docId) });
       qc.invalidateQueries({ queryKey: ["document", docId] });
     } catch (e) {
@@ -122,18 +137,17 @@ export function ChunksTab({
   };
   // Tự index lại sau khi sửa: tài liệu tự chạy và không đang dừng ở チャンクレビュー (cùng điều kiện với backend)
   const autoIndex = !!d?.auto_review && d?.review_hold !== "chunk";
-  const reviewing = reviewStage(d) === "chunk";
   const saved = autoIndex ? t("viewer.chunkTab.savedReindex") : t("common.saved");
 
-  if (chunks.isError) return <QueryError error={chunks.error} onRetry={() => chunks.refetch()} className="m-auto" />;
-  if (chunks.isLoading || !d)
+  if (head.isError) return <QueryError error={head.error} onRetry={() => head.refetch()} className="m-auto" />;
+  if (!d || filter === null || (head.isLoading && !head.data))
     return (
       <div className="grid flex-1 grid-cols-1 gap-4 p-4 lg:grid-cols-[380px_1fr]">
         <Skeleton className="h-full min-h-60" />
         <Skeleton className="h-full min-h-60" />
       </div>
     );
-  if (!all.length)
+  if (counts.all === 0)
     return (
       <div className="flex flex-1 items-center justify-center">
         <EmptyState icon={<Layers />} title={t("viewer.chunkTab.empty")} hint={t("viewer.chunkTab.emptyHint")} />
@@ -148,18 +162,30 @@ export function ChunksTab({
       {/* ------------------------------------------------ danh sách */}
       <aside className="flex max-h-[45vh] min-h-0 flex-col border-b border-border bg-card lg:max-h-none lg:border-b-0 lg:border-r">
         <div className="flex flex-col gap-2 border-b border-border p-3">
-          <div className="relative">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <div className="flex gap-2">
+            <div className="relative min-w-0 flex-1">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder={t("viewer.chunkTab.search")}
+                aria-label={t("viewer.chunkTab.search")}
+                className="h-8 pl-8 text-sm"
+              />
+            </div>
             <Input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder={t("viewer.chunkTab.search")}
-              aria-label={t("viewer.chunkTab.search")}
-              className="h-8 pl-8 text-sm"
+              type="number"
+              min={1}
+              value={pageText}
+              onChange={(e) => setPageText(e.target.value)}
+              placeholder={t("viewer.chunkTab.pagePlaceholder")}
+              aria-label={t("viewer.chunkTab.pageFilter")}
+              title={t("viewer.chunkTab.pageFilter")}
+              className="h-8 w-20 text-sm"
             />
           </div>
           <div role="tablist" className="flex rounded-lg bg-muted p-0.5 text-xs font-medium">
-            {(["all", "issues"] as Filter[]).map((k) => (
+            {(["all", "issues"] as ChunkFilter[]).map((k) => (
               <button
                 key={k}
                 type="button"
@@ -171,53 +197,27 @@ export function ChunksTab({
                   filter === k ? "bg-card text-foreground shadow-card" : "text-muted-foreground hover:text-foreground",
                 )}
               >
-                {k === "all" ? t("viewer.chunkTab.all", { n: all.length }) : t("viewer.chunkTab.issues", { n: issues })}
+                {k === "all" ? t("viewer.chunkTab.all", { n: counts.all }) : t("viewer.chunkTab.issues", { n: counts.issues })}
               </button>
             ))}
           </div>
+          {(q || pageNum) && (
+            <p className="text-[11px] text-muted-foreground">{t("viewer.chunkTab.matches", { n: total })}</p>
+          )}
         </div>
-        {list.length === 0 ? (
+        {total === 0 ? (
           <p className="p-4 text-sm text-muted-foreground">{t("viewer.chunkTab.noMatch")}</p>
         ) : (
-          <ul ref={listRef} className="min-h-0 flex-1 divide-y divide-border overflow-y-auto">
-            {list.map((c) => {
-              const [a, b] = pdfRange(d, c);
-              const weak = weakIn(c).length > 0;
-              return (
-                <li key={c.id} data-chunk={c.id}>
-                  <button
-                    type="button"
-                    onClick={() => onSelect(c.id)}
-                    aria-current={c.id === selectedId}
-                    className={cn(
-                      "flex w-full cursor-pointer flex-col gap-1 px-3 py-2.5 text-left transition hover:bg-accent/60",
-                      c.id === selectedId && "bg-primary-soft/70",
-                    )}
-                  >
-                    <span className="flex items-center gap-1.5">
-                      <span className="font-mono text-[11px] text-muted-foreground">#{c.seq}</span>
-                      <Badge tone="primary" className="font-mono">
-                        {c.item_code || "—"}
-                      </Badge>
-                      <ConfidenceBadge value={c.confidence} />
-                      {weak && <AlertTriangle className="size-3.5 text-warning" aria-label={t("viewer.chunkTab.weak")} />}
-                      {c.violations.length > 0 && <Badge tone="warning">{t("viewer.chunkTab.rules", { n: c.violations.length })}</Badge>}
-                      <span className="ml-auto text-[11px] tabular-nums text-muted-foreground">
-                        {t("viewer.chunks.pages", { from: a, to: b })}
-                      </span>
-                    </span>
-                    {c.title && <span className="truncate text-sm font-medium">{c.title}</span>}
-                    <span className="line-clamp-2 text-xs text-muted-foreground">{c.text}</span>
-                    {b > a && (
-                      <span className="w-fit rounded bg-violet-soft px-1.5 py-px text-[10px] font-medium text-violet">
-                        {t("viewer.chunkTab.span", { n: b - a + 1 })}
-                      </span>
-                    )}
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
+          <ChunkList
+            docId={docId}
+            params={params}
+            total={total}
+            selectedId={selectedId}
+            onSelect={onSelect}
+            scrollToIndex={focusIndex.data ?? null}
+            pdfRange={(c: ChunkSummary) => pdfRange(d, c)}
+            weak={(c: ChunkSummary) => weakIn(c).length > 0}
+          />
         )}
       </aside>
 
