@@ -20,6 +20,9 @@ const PageReviewPage = lazy(() => import("./pages/PageReview"));
 const ChunkReviewPage = lazy(() => import("./pages/ChunkReview"));
 const SettingsPage = lazy(() => import("./pages/Settings"));
 const ChatTestPage = lazy(() => import("./pages/ChatTest"));
+const LibraryPage = lazy(() => import("./pages/v2/Library"));
+const NotebookPage = lazy(() => import("./pages/v2/Notebook"));
+const DocumentViewerPage = lazy(() => import("./pages/v2/DocumentViewer"));
 
 function Splash() {
   return (
@@ -59,7 +62,11 @@ function Routed() {
           </Guard>
         }
       >
-        <Route index element={<DashboardPage />} />
+        <Route index element={<Navigate to="/library" replace />} />
+        <Route path="dashboard" element={<DashboardPage />} />
+        <Route path="library" element={<LibraryPage />} />
+        <Route path="notebooks/:nbId" element={<NotebookPage />} />
+        <Route path="notebooks/:nbId/sources/:docId" element={<DocumentViewerPage />} />
         <Route path="documents" element={<DocumentsPage />} />
         <Route path="documents/:docId" element={<DocumentDetailPage />} />
         <Route path="documents/:docId/review" element={<NextReviewRedirect />} />

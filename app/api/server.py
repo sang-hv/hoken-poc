@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 import app.steps.handlers  # noqa: F401 — đăng ký step (API cần biết queue của từng step)
-from app.api.routers import admin, auth, documents, jobs
+from app.api.routers import admin, auth, documents, inspect, jobs, notebooks
 from app.services.config_service import NotConfigured
 from app.services.container import get_container
 from app.services.pipeline import PipelineError
@@ -62,7 +62,7 @@ def create_app() -> FastAPI:
     def health():
         return {"ok": True}
 
-    for r in (auth.router, documents.router, jobs.router, admin.router):
+    for r in (auth.router, documents.router, jobs.router, admin.router, notebooks.router, inspect.router):
         api.include_router(r)
 
     @api.exception_handler(HTTPException)

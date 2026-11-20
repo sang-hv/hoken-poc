@@ -419,3 +419,171 @@ def low_confidence_boxes(docling_meta: dict | None, cu_raw: dict | None, thresho
         cu_raw or {}, threshold
     )
     return sorted(boxes, key=lambda b: b["confidence"])
+
+
+# ================================================================== UI v2 — điểm yếu & chất lượng (tab 検査)
+# Phần tử (element) là dict: {label, bbox, text (Markdown), raw_text (chữ đọc từ lớp text / OCR / CU),
+# confidence, status, merged_cells?, reread_from?}. Hàm ở đây chỉ tính toán, không I/O.
+
+HEADER_FOOTER = ("page_header", "page_footer")
+DONE_STATUSES = ("fixed", "accepted")  # người (hoặc người bấm AI) đã xử lý → điểm yếu không còn "mở"
+_HTML_COMMENT = re.compile(r"<!--.*?-->", re.S)
+_MD_NOISE = re.compile(r"[\s#*|>`_~\-－—–‐:：]+")
+_TABLE_SEP = re.compile(r"^\|[\s:\-|]+\|$")
+
+
+def visible_text(md: str) -> str:
+    """Markdown bỏ chú thích HTML (vd `<!-- figure:0 -->`) và khoảng trắng hai đầu."""
+    return _HTML_COMMENT.sub("", md or "").strip()
+
+
+def norm_text(s: str) -> str:
+    """Chuẩn hoá để so nội dung: NFKC, bỏ chú thích HTML, ký hiệu Markdown và khoảng trắng."""
+    import unicodedata
+
+    return _MD_NOISE.sub("", unicodedata.normalize("NFKC", _HTML_COMMENT.sub("", s or "")))
+
+
+def md_table_rows(md: str) -> list[list[str]]:
+    """Các hàng bảng Markdown (bỏ hàng phân cách `|---|`) → danh sách ô."""
+    rows = []
+    for ln in (md or "").split("\n"):
+        s = ln.strip()
+        if not s.startswith("|") or _TABLE_SEP.match(s):
+            continue
+        rows.append([x.strip() for x in s.strip("|").split("|")])
+    return rows
+
+
+def table_suspect_reason(el: dict, *, continues_prev: bool = False, continues_next: bool = False) -> str:
+    """'' nếu bảng ổn; ngược lại lý do: not_table (đọc ra không phải bảng Markdown) · cols (số cột lệch giữa
+    các hàng) · merged (bảng có ô gộp) · cross_page (bảng chạm mép trang và nối sang trang trước/sau)."""
+    rows = md_table_rows(el.get("text", ""))
+    if not rows:
+        return "not_table"
+    if len({len(r) for r in rows}) > 1:
+        return "cols"
+    if el.get("merged_cells"):
+        return "merged"
+    bb = el.get("bbox") or [0, 0, 1, 1]
+    if (continues_next and bb[3] > 0.85) or (continues_prev and bb[1] < 0.15):
+        return "cross_page"
+    return ""
+
+
+def element_weak_flags(
+    el: dict, opts: Any, *, table_continues_prev: bool = False, table_continues_next: bool = False
+) -> list[dict]:
+    """Điểm yếu của một phần tử. `opts` là QualityOptions.
+
+    - low_confidence: confidence < weak_confidence (error nếu < auto_vlm_below, còn lại warn)
+    - picture_no_desc: hình chưa có mô tả (Markdown rỗng sau khi bỏ chú thích) — nếu bật picture_needs_description
+    - missing_text: vùng có chữ (raw_text ≥ 4 ký tự) nhưng Markdown đọc ra < 30% độ dài đó
+    Header / footer (page_header, page_footer) không có điểm yếu.
+    - table_suspect: xem `table_suspect_reason`
+    - reread: đã phải đọc lại bằng VLM (detail = confidence trước khi đọc lại)
+    """
+    label = el.get("label", "text")
+    flags: list[dict] = []
+    if label in HEADER_FOOTER:  # header / footer / số trang bị bỏ khi nối trang — không tính điểm yếu
+        return flags
+    conf = el.get("confidence")
+    if conf is not None and float(conf) < opts.weak_confidence:
+        sev = "error" if float(conf) < opts.auto_vlm_below else "warn"
+        flags.append({"code": "low_confidence", "severity": sev, "detail": f"{float(conf):.2f}"})
+    text_len = len(norm_text(el.get("text", "")))
+    if label == "picture":
+        if opts.picture_needs_description and not visible_text(el.get("text", "")):
+            flags.append({"code": "picture_no_desc", "severity": "warn"})
+    else:
+        raw_len = len(norm_text(el.get("raw_text", "")))
+        if raw_len >= 4 and text_len < 0.3 * raw_len:
+            flags.append({"code": "missing_text", "severity": "error", "detail": f"{text_len}/{raw_len}"})
+    if label == "table":
+        why = table_suspect_reason(el, continues_prev=table_continues_prev, continues_next=table_continues_next)
+        if why:
+            flags.append({"code": "table_suspect", "severity": "warn", "detail": why})
+    if el.get("reread_from") is not None:
+        before = el["reread_from"]
+        flags.append({"code": "reread", "severity": "warn", "detail": f"{float(before):.2f}" if before != "" else ""})
+    return flags
+
+
+def page_level_flag(
+    elements: list[dict], page_markdown: str, opts: Any, *, scanned: bool, ocr_score: float | None
+) -> dict | None:
+    """Điểm yếu của cả trang (gắn vào phần tử nội dung đầu tiên của trang):
+    - blank_page: Markdown của trang gần như rỗng (< 5 ký tự có nghĩa)
+    - ocr_weak: trang scan (không có lớp text / phải OCR) và điểm OCR < weak_confidence; không có điểm OCR thì
+      dùng confidence trung bình của các phần tử."""
+    if len(norm_text(page_markdown)) < 5:
+        return {"code": "blank_page", "severity": "error"}
+    if not scanned:
+        return None
+    score = ocr_score
+    if score is None:
+        confs = [float(e["confidence"]) for e in elements if e.get("confidence") is not None]
+        score = sum(confs) / len(confs) if confs else None
+    if score is not None and score < opts.weak_confidence:
+        return {"code": "ocr_weak", "severity": "warn", "detail": f"{score:.2f}"}
+    return None
+
+
+def element_status(flags: list[dict], current: str = "") -> str:
+    """fixed / accepted giữ nguyên (người đã xử lý); còn lại weak nếu có điểm yếu, ok nếu không."""
+    if current in DONE_STATUSES:
+        return current
+    return "weak" if flags else "ok"
+
+
+def open_flags(el: dict) -> list[dict]:
+    return [] if el.get("status") in DONE_STATUSES else list(el.get("weak") or [])
+
+
+FLAG_PENALTY = {"error": 12, "warn": 5}
+MAX_PENALTY = 60
+
+
+def page_quality_score(elements: list[dict], vlm_score: float | None = None) -> int:
+    """Điểm trang 0..100 (phạt theo điểm yếu còn mở):
+
+    base    = 100 × trung bình confidence hiệu dụng của các phần tử nội dung (bỏ header/footer);
+              phần tử fixed/accepted tính 1.0, phần tử không có confidence tính 0.95; trang không có phần tử
+              nội dung → base = 100
+    penalty = Σ điểm yếu còn mở: error 12, warn 5 (tối đa 60)
+    score   = clamp(base − penalty, 0, 100)
+    có điểm VLM (nút 「AIで採点」) → score = trung bình (score, điểm VLM)
+    """
+    content = [e for e in elements if e.get("label") not in HEADER_FOOTER]
+    effs = []
+    for e in content:
+        if e.get("status") in DONE_STATUSES:
+            effs.append(1.0)
+        elif e.get("confidence") is None:
+            effs.append(0.95)
+        else:
+            effs.append(max(0.0, min(1.0, float(e["confidence"]))))
+    base = 100.0 * (sum(effs) / len(effs)) if effs else 100.0
+    penalty = min(MAX_PENALTY, sum(FLAG_PENALTY.get(f.get("severity"), 5) for e in elements for f in open_flags(e)))
+    score = max(0.0, min(100.0, base - penalty))
+    if vlm_score is not None:
+        score = (score + max(0.0, min(100.0, float(vlm_score)))) / 2
+    return int(round(score))
+
+
+def doc_quality_score(page_scores: list[int]) -> int:
+    """Điểm tài liệu = 0.7 × trung bình điểm trang + 0.3 × điểm trang kém nhất (trang kém kéo điểm xuống).
+    Không có trang nào → 0."""
+    if not page_scores:
+        return 0
+    mean = sum(page_scores) / len(page_scores)
+    return int(round(0.7 * mean + 0.3 * min(page_scores)))
+
+
+def quality_grade(score: float, opts: Any) -> str:
+    """good (良好) ≥ grade_good · fair (要注意) ≥ grade_fair · poor (不良)."""
+    if score >= opts.grade_good:
+        return "good"
+    if score >= opts.grade_fair:
+        return "fair"
+    return "poor"

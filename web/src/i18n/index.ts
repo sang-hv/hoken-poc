@@ -15,7 +15,7 @@ function initial(): string {
   } catch {
     /* localStorage có thể bị chặn */
   }
-  return navigator.language.toLowerCase().startsWith("ja") ? "ja" : "en";
+  return "ja"; // UI v2: demo cho khách Nhật — mặc định tiếng Nhật, đổi được ở thanh trên
 }
 
 i18n.use(initReactI18next).init({

@@ -41,6 +41,8 @@ def create_document(
     page_from: int | None,
     page_to: int | None,
     actor: str,
+    auto_review: bool = False,
+    file_type: str = "pdf",
 ) -> Document:
     if not data.startswith(b"%PDF"):
         raise PipelineError("not_pdf")
@@ -62,6 +64,9 @@ def create_document(
         created_by=actor,
         created_at=now_iso(),
         config_version=version,
+        auto_review=auto_review,
+        file_type=file_type,
+        size_bytes=len(data),
     )
     c.blob.put(k_source(doc.id), data, "application/pdf")
     for p in range(pf, pt + 1):
@@ -258,6 +263,49 @@ def _invalidate_chunks(c: Container, doc_id: str) -> None:
     if doc.status in (DocStatus.chunk_review, DocStatus.indexed):
         emit(c, doc_id, "chunk.invalidated", "warn")
         refresh_doc(c, doc, DocStatus.ocr_review)
+
+
+# ================================================================== tự duyệt (UI v2, chỉ tài liệu auto_review)
+AUTO = "auto"  # người duyệt của luồng tự động
+
+
+def auto_approve_pages(c: Container, doc_id: str) -> int:
+    """Duyệt mọi trang đang chờ review với người duyệt "auto". Chỉ gọi cho tài liệu `auto_review`."""
+    n = 0
+    for p in c.repo.list_pages(doc_id):
+        if p.status == PageStatus.review:
+            p.status, p.reviewed_by, p.reviewed_at = PageStatus.approved, AUTO, now_iso()
+            c.repo.save_page(p)
+            n += 1
+    if n:
+        emit(c, doc_id, "auto.pages_approved", count=n)
+    refresh_doc(c, doc_id)
+    return n
+
+
+def auto_approve_chunks(c: Container, doc_id: str) -> int:
+    n = 0
+    for x in c.repo.list_chunks(doc_id):
+        if x.status == ChunkStatus.draft:
+            x.status, x.edited_by = ChunkStatus.approved, AUTO
+            c.repo.save_chunk(x)
+            n += 1
+    emit(c, doc_id, "auto.chunks_approved", count=n)
+    return n
+
+
+def auto_start_index(c: Container, doc_id: str) -> Job | None:
+    """Sau khi chunk xong (tài liệu auto_review): tự duyệt chunk rồi xếp job index. Không kiểm tra cấu hình
+    trước — thiếu embedding/search thì job index bị chặn (failed, có Retry) để thẻ nguồn hiện lỗi."""
+    auto_approve_chunks(c, doc_id)
+    if not c.repo.list_chunks(doc_id):
+        emit(c, doc_id, "auto.no_chunks", "warn")
+        refresh_doc(c, doc_id, DocStatus.indexed)
+        return None
+    job = enqueue(c, doc_id, "index", actor=AUTO)
+    if job:
+        refresh_doc(c, doc_id, DocStatus.indexing)
+    return job
 
 
 # ================================================================== chunk & index

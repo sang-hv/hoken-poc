@@ -68,6 +68,9 @@ class Document(BaseModel):
     updated_at: str = ""
     config_version: int = 0  # phiên bản tuỳ chọn pipeline lúc upload
     stats: dict[str, int] = Field(default_factory=dict)
+    auto_review: bool = False  # UI v2 (sổ tay demo): tự duyệt trang/chunk, điểm yếu chuyển cho người xử lý
+    file_type: str = "pdf"  # pdf | image (ảnh được đổi sang PDF 1 trang khi tải lên)
+    size_bytes: int = 0
 
     @property
     def n_pages(self) -> int:

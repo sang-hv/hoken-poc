@@ -3,6 +3,7 @@ import {
   Gauge,
   KeyRound,
   Languages,
+  LibraryBig,
   ListChecks,
   LogOut,
   Menu,
@@ -54,13 +55,18 @@ function NavItem({
   label,
   end,
   collapsed,
+  also,
 }: {
   to: string;
   icon: React.ReactNode;
   label: string;
   end?: boolean;
   collapsed?: boolean;
+  /** Đường dẫn khác cũng tính là đang ở mục này (vd /notebooks/... thuộc ライブラリ). */
+  also?: RegExp;
 }) {
+  const loc = useLocation();
+  const alsoActive = !!also && also.test(loc.pathname);
   const link = (
     <NavLink
       to={to}
@@ -70,7 +76,7 @@ function NavItem({
         cn(
           "flex items-center gap-3 rounded-lg py-2 text-sm font-medium transition [&_svg]:size-[18px] [&_svg]:shrink-0",
           collapsed ? "justify-center px-0" : "px-3",
-          isActive
+          isActive || alsoActive
             ? "bg-primary-soft text-primary"
             : "text-muted-foreground hover:bg-accent hover:text-foreground",
         )
@@ -119,16 +125,28 @@ function useSidebarCollapsed() {
   return { collapsed, toggle: () => setCollapsed((c) => !c) };
 }
 
+/** Sổ tay / màn chi tiết nguồn: toàn màn hình, sidebar thu về dải icon để 3 cột đủ rộng. */
+const NOTEBOOK_ROUTE = /^\/notebooks\//;
+
 export function AppShell() {
   const { t, i18n } = useTranslation();
   const { user, can, logout } = useAuth();
   const theme = useTheme();
   const [open, setOpen] = useState(false);
   const [pwOpen, setPwOpen] = useState(false);
-  const sidebar = useSidebarCollapsed();
+  const stored = useSidebarCollapsed();
   const loc = useLocation();
   useEffect(() => setOpen(false), [loc.pathname]);
-  const fullBleed = /\/documents\/[^/]+\/(pages|chunks)/.test(loc.pathname);
+  const onNotebook = NOTEBOOK_ROUTE.test(loc.pathname);
+  // Trên màn sổ tay: mặc định thu gọn, vẫn mở được bằng nút; không ghi đè lựa chọn đã lưu cho các màn khác
+  const [nbExpanded, setNbExpanded] = useState(false);
+  useEffect(() => {
+    if (!onNotebook) setNbExpanded(false);
+  }, [onNotebook]);
+  const sidebar = onNotebook
+    ? { collapsed: !nbExpanded, toggle: () => setNbExpanded((v) => !v) }
+    : stored;
+  const fullBleed = onNotebook || /\/documents\/[^/]+\/(pages|chunks)/.test(loc.pathname);
 
   /** Menu dùng cho sidebar desktop (có thể thu gọn) và ngăn kéo trên mobile (luôn mở rộng). */
   const nav = (collapsed: boolean, collapsible: boolean) => (
@@ -146,8 +164,10 @@ export function AppShell() {
           </div>
         )}
       </div>
-      <NavSection label={t("nav.sectionWork")} collapsed={collapsed} />
-      <NavItem to="/" end icon={<Gauge />} label={t("nav.dashboard")} collapsed={collapsed} />
+      <NavSection label={t("nav.sectionDemo")} collapsed={collapsed} />
+      <NavItem to="/library" icon={<LibraryBig />} label={t("nav.library")} also={NOTEBOOK_ROUTE} collapsed={collapsed} />
+      <NavSection label={t("nav.sectionOps")} collapsed={collapsed} />
+      <NavItem to="/dashboard" end icon={<Gauge />} label={t("nav.dashboard")} collapsed={collapsed} />
       <NavItem to="/documents" icon={<FileText />} label={t("nav.documents")} collapsed={collapsed} />
       <NavItem to="/jobs" icon={<ListChecks />} label={t("nav.jobs")} collapsed={collapsed} />
       {can("reviewer") && (

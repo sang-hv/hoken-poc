@@ -57,6 +57,10 @@ stateDiagram-v2
 Sau khi **mọi trang approved** → `chunk` (cắt thô theo mã mục → LLM ↔ kiểm tra luật ≤ 20 vòng → confidence) →
 **review chunk** (mọi chunk phải approved) → `index` (embedding + upsert).
 
+> Trên đây là luồng **duyệt tay** (`auto_review = false`, màn 文書 cũ). Mặc định (tài liệu từ sổ tay,
+> `auto_review = true`) pipeline tự chạy hết: `stitch` → `auto_review` (tự đọc lại / gắn ⚠, tự duyệt) → `chunk` →
+> `index`; người dùng chỉ sửa hoặc bỏ qua chỗ có ⚠. Xem `docs/overview/01-cau-truc-he-thong.md` mục 4.
+
 Tiêu chí **trang dễ** (theo `conv_res.confidence.pages[n]` của Docling, grade: <0.5 poor, <0.8 fair, <0.9 good, ≥0.9 excellent):
 `low_score ≥ 0.8` · `parse_score ≥ 0.8` · không có `ocr_score` · không bảng gộp ô · không bảng chạm mép trên/dưới (tràn trang) ·
 không hình > 5% trang (sau khi bỏ logo/con dấu/chữ ký). Tất cả chỉnh được trong Admin → Pipeline.

@@ -98,6 +98,25 @@ class ChatOptions(BaseModel):
     max_history: int = 6  # số lượt hỏi đáp trước đó gửi kèm
 
 
+class QualityOptions(BaseModel):
+    """Chấm chất lượng sau pipeline + phát hiện điểm yếu (UI v2, tab 検査). Chủ: backend A2."""
+
+    weak_confidence: float = 0.8  # phần tử có confidence dưới mức này → điểm yếu low_confidence
+    auto_vlm_below: float = 0.6  # phần tử dưới mức này được tự gọi VLM đọc lại trong pipeline
+    picture_needs_description: bool = True  # hình chưa có mô tả → điểm yếu picture_no_desc
+    grade_good: int = 85  # điểm trang/tài liệu ≥ mức này = good (良好)
+    grade_fair: int = 60  # ≥ mức này = fair (要注意), thấp hơn = poor (不良)
+
+
+class NotebookOptions(BaseModel):
+    """Sổ tay demo (UI v2): pipeline tự chạy hết + chat Agentic RAG. Chủ: backend A1."""
+
+    auto_review: bool = True  # tài liệu tải lên từ sổ tay: tự duyệt trang/chunk (người duyệt "auto")
+    agent_steps: int = 3  # số lần tìm tối đa của agent (chế độ 標準)
+    agent_steps_deep: int = 5  # chế độ じっくり回答
+    top_k: int = 6
+
+
 class PipelineOptions(BaseModel):
     docling: DoclingOptions = Field(default_factory=DoclingOptions)
     routing: RoutingOptions = Field(default_factory=RoutingOptions)
@@ -107,3 +126,5 @@ class PipelineOptions(BaseModel):
     chunk: ChunkOptions = Field(default_factory=ChunkOptions)
     index: IndexOptions = Field(default_factory=IndexOptions)
     chat: ChatOptions = Field(default_factory=ChatOptions)
+    quality: QualityOptions = Field(default_factory=QualityOptions)
+    notebook: NotebookOptions = Field(default_factory=NotebookOptions)

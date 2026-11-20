@@ -1,8 +1,13 @@
 import type { Messages } from "./en";
+import { ja as nbJa } from "./v2/notebook";
+import { ja as viewerJa } from "./v2/viewer";
 
 const ja: Messages = {
+  nb: nbJa,
+  viewer: viewerJa,
   app: { name: "保険AI 取込管理", tagline: "歯科点数ナレッジ取込パイプライン" },
   nav: {
+    library: "ライブラリ",
     dashboard: "ダッシュボード",
     documents: "文書",
     jobs: "ジョブ",
@@ -11,7 +16,8 @@ const ja: Messages = {
     settings: "設定",
     users: "ユーザー",
     audit: "監査ログ",
-    sectionWork: "作業",
+    sectionDemo: "デモ",
+    sectionOps: "運用",
     sectionAdmin: "管理",
     sectionTest: "テスト",
     collapse: "サイドバーを折りたたむ",
@@ -124,6 +130,7 @@ const ja: Messages = {
   },
   jobStatus: { queued: "待機中", running: "実行中", succeeded: "成功", failed: "失敗", cancelled: "中止" },
   steps: {
+    auto_review: "自動チェック",
     upload: "アップロード",
     docling: "Docling",
     route: "振り分け",
@@ -185,6 +192,11 @@ const ja: Messages = {
     "chunk.round": "{{item_code}} · {{round}} 回目：{{chunks}} チャンク、ルール違反 {{violations}}",
     "chunk.section": "{{item_code}}：{{rounds}} 回で {{chunks}} チャンク",
     "chunk.fallback": "{{item_code}}：LLM が収束しないためルールで分割",
+    "auto.pages_approved": "ページを自動承認しました（ノートブックデモ）",
+    "auto.chunks_approved": "チャンクを自動承認しました（ノートブックデモ）",
+    "auto.no_chunks": "チャンクが生成されませんでした",
+    "auto.prepare_failed": "品質チェックを実行できませんでした（処理は続行）",
+    "auto.reindex": "内容が変更されたため、再チャンク化・再インデックスします",
     "chunk.llm_not_configured": "LLM 未設定のためルールのみで分割",
     "chunk.done": "{{chunks}} チャンクを作成（低信頼度 {{low_confidence}}）",
     "chunk.invalidated": "チャンク化後に OCR が変更されました — 再チャンク化が必要です",
@@ -210,6 +222,19 @@ const ja: Messages = {
     not_pdf: "PDF ファイルではありません",
     bad_page_range: "ページ範囲が PDF の範囲外です（1–{{total}}）",
     too_large: "ファイルが大きすぎます",
+    element_not_found: "要素が見つかりません",
+    no_insights: "インサイトはまだありません",
+    no_text: "文書のテキストがまだありません",
+    insights_failed: "インサイトを生成できませんでした",
+    doc_not_found: "文書が見つかりません",
+    page_not_found: "ページが見つかりません",
+    notebook_not_found: "ノートブックが見つかりません",
+    source_not_found: "ソースが見つかりません",
+    note_not_found: "メモが見つかりません",
+    name_required: "名前を入力してください",
+    empty_file: "ファイルが空です",
+    unsupported_file: "対応していないファイルです。PDF・PNG・JPEG をアップロードしてください。",
+    bad_image: "画像を読み込めませんでした",
     doc_busy: "この文書はジョブ実行中です",
     page_not_ready: "このページはまだレビューできません",
     pages_not_approved: "チャンク化の前に全ページを承認してください",

@@ -164,6 +164,28 @@ def stitch_step(ctx: StepCtx) -> list[Next]:
     )
     pl.refresh_doc(c, doc.id, DocStatus.ocr_review)
     pl.refresh_doc(c, doc.id)
+    if doc.auto_review:  # UI v2 (sổ tay): không chờ người review, chạy tiếp luồng tự động
+        return [Next("auto_review")]
+    return []
+
+
+# ================================================================== 4b. Tự duyệt (chỉ tài liệu auto_review — UI v2)
+@register("auto_review", "ai")
+def auto_review_step(ctx: StepCtx) -> list[Next]:
+    """Dựng phần tử + điểm yếu (inspect), duyệt mọi trang với người duyệt "auto", rồi xếp job chunk.
+    Điểm yếu không chặn luồng: người xử lý sau (sửa / xác nhận) ở màn 検査."""
+    c, doc = ctx.c, ctx.doc
+    if not doc.auto_review:
+        raise StepSkipped("not_auto_review")
+    from app.services import inspect
+
+    try:
+        inspect.prepare_document(c, doc.id)
+    except Exception as e:  # noqa: BLE001 — chấm chất lượng lỗi không được chặn tài liệu
+        ctx.emit("auto.prepare_failed", "warn", error=type(e).__name__)
+    ctx.check_cancelled()
+    pl.auto_approve_pages(c, doc.id)
+    pl.start_chunking(c, doc.id, pl.AUTO)
     return []
 
 
@@ -321,6 +343,8 @@ def chunk_step(ctx: StepCtx) -> list[Next]:
     c.repo.replace_chunks(doc.id, chunks)
     ctx.emit("chunk.done", chunks=len(chunks), low_confidence=sum(1 for x in chunks if x.confidence < 0.7))
     pl.refresh_doc(c, doc.id, DocStatus.chunk_review)
+    if doc.auto_review:
+        pl.auto_start_index(c, doc.id)
     return []
 
 
@@ -365,4 +389,8 @@ def index_step(ctx: StepCtx) -> list[Next]:
         c.repo.save_chunk(x)
     ctx.emit("index.done", chunks=len(chunks), dims=embedder.dims)
     pl.refresh_doc(c, doc.id, DocStatus.indexed)
+    if doc.auto_review:  # người sửa phần tử trong lúc chunk/index đang chạy → chạy lại với nội dung mới
+        from app.services import notebooks
+
+        notebooks.run_pending_reindex(c, doc.id)
     return []

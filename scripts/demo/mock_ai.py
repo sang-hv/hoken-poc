@@ -101,6 +101,13 @@ def _chat_rag(user: str) -> str:
 
 
 def _chat_answer(messages: list[dict], json_mode: bool) -> str:
+    from scripts.demo import mock_inspect, mock_notebook  # UI v2: mỗi phần một module, tránh sửa chồng
+
+    for mod in (mock_notebook, mock_inspect):
+        out = mod.answer(messages, json_mode)
+        if out is not None:
+            return out
+
     def text_of(m):
         c = m["content"]
         return c if isinstance(c, str) else " ".join(p.get("text", "") for p in c if p.get("type") == "text")
