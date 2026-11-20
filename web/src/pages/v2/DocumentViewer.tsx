@@ -144,7 +144,8 @@ export default function DocumentViewerPage() {
         if (contentChanged.current) {
           contentChanged.current = false;
           qc.invalidateQueries({ queryKey: vk.all(docId) });
-          }
+          qc.invalidateQueries({ queryKey: vk.pages(docId) }); // trạng thái duyệt trang (tab 検査)
+        }
       }, 1500);
     },
     [qc, docId],
@@ -157,7 +158,7 @@ export default function DocumentViewerPage() {
 
   return (
     <div className="flex h-full min-h-[32rem] flex-col bg-background">
-      <TopBar docId={docId} info={info.data} infoLoading={info.isLoading} tab={tab} onTab={onTab} page={page} />
+      <TopBar docId={docId} info={info.data} infoLoading={info.isLoading} tab={tab} onTab={onTab} />
 
       {/* Đang chờ review (duyệt tay): nhắc ở tab review tương ứng — 検査 cho OCR, チャンク cho chunk */}
       {meta.data &&

@@ -54,7 +54,7 @@ export function NextAction({ doc, className }: { doc: Doc; className?: string })
     item = { to: base, label: t("detail.startChunking"), icon: <ArrowRight />, tone: "action" };
   else if (doc.status === "chunk_review")
     item = {
-      to: `${base}/chunks`,
+      to: `${base}?tab=chunks`,
       label: t("documents.next.reviewChunks", { n: (s.chunks ?? 0) - (s.chunks_approved ?? 0) }),
       icon: <ListChecks />,
       tone: "action",

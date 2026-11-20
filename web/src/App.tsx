@@ -14,8 +14,6 @@ import LoginPage from "./pages/Login";
 import SetupPage from "./pages/Setup";
 import UsersPage from "./pages/Users";
 
-const PageReviewPage = lazy(() => import("./pages/PageReview"));
-const ChunkReviewPage = lazy(() => import("./pages/ChunkReview"));
 const SettingsPage = lazy(() => import("./pages/Settings"));
 const ChatTestPage = lazy(() => import("./pages/ChatTest"));
 const DocumentViewerPage = lazy(() => import("./pages/v2/DocumentViewer"));
@@ -42,6 +40,12 @@ function ViewRedirect() {
   const { docId = "" } = useParams();
   const { search } = useLocation();
   return <Navigate to={`/documents/${docId}${search}`} replace />;
+}
+
+/** Màn review cũ đã bỏ: /documents/:docId/pages/:page → tab 検査, /documents/:docId/chunks → tab チャンク. */
+function LegacyRedirect({ tab }: { tab: "inspect" | "chunks" }) {
+  const { docId = "", page } = useParams();
+  return <Navigate to={`/documents/${docId}?tab=${tab}${page ? `&page=${page}` : ""}`} replace />;
 }
 
 function Routed() {
@@ -71,8 +75,8 @@ function Routed() {
         <Route path="documents/:docId" element={<DocumentViewerPage />} />
         <Route path="documents/:docId/review" element={<NextReviewRedirect />} />
         <Route path="documents/:docId/view" element={<ViewRedirect />} />
-        <Route path="documents/:docId/pages/:page" element={<PageReviewPage />} />
-        <Route path="documents/:docId/chunks" element={<ChunkReviewPage />} />
+        <Route path="documents/:docId/pages/:page" element={<LegacyRedirect tab="inspect" />} />
+        <Route path="documents/:docId/chunks" element={<LegacyRedirect tab="chunks" />} />
         <Route
           path="test/chat"
           element={

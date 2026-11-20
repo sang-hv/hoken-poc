@@ -31,9 +31,11 @@ sáng và tối (`localStorage hoken.lang`, `hoken.theme`), và không được 
   invalidate query liên quan (có throttle) thay vì polling dày.
 - Nội dung log hiển thị bằng `useEventText()` (dịch `events.<code>` + `reasons.*`).
 
-## Màn review
-- Review OCR (`pages/PageReview.tsx`): ảnh trang + khung layout Docling bên trái, editor/preview/diff bên phải,
-  phím tắt J/K/Ctrl+S/Ctrl+Enter, phiên bản + khôi phục, chạy lại bằng LLM theo prompt.
-- Review chunk (`pages/ChunkReview.tsx`): ưu tiên chunk confidence thấp/vi phạm luật; gộp, tách tại con trỏ, duyệt;
-  "Embed & index" chỉ bật khi mọi chunk đã duyệt.
-- Không có đường tắt bỏ qua review — kể cả với trang/chunk confidence cao.
+## Màn review (trong màn chi tiết tài liệu `pages/v2/DocumentViewer.tsx`, không còn màn riêng)
+- Review OCR ở tab **検査** (`components/v2/viewer/InspectTab.tsx`): ảnh trang + khung phần tử, sửa / AI đọc lại
+  từng phần tử; tài liệu duyệt tay có `PageApproval` (「このページを承認」, Ctrl/⌘+Enter → sang trang chưa duyệt kế tiếp,
+  「承認を取り消す」). `/documents/:id/review` chuyển tới trang chưa duyệt đầu tiên; link cũ `/pages/:n` → tab 検査.
+- Review chunk ở tab **チャンク** (`ChunksTab.tsx`): lọc 要確認, sửa, tách tại con trỏ, gộp với chunk sau, duyệt;
+  popup 原本と比較 tô vùng của chunk trên trang gốc. Link cũ `/chunks` → tab チャンク.
+- `ReviewGate`: nhắc review ở tab パイプライン + tab review tương ứng; 「すべて承認」 chỉ chạy sau popup xác nhận (ghi
+  audit, người duyệt = người bấm) rồi chạy luôn bước sau.

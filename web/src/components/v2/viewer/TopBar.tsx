@@ -7,7 +7,6 @@ import {
   Dropdown,
   DropdownContent,
   DropdownItem,
-  DropdownSeparator,
   DropdownTrigger,
   Skeleton,
 } from "@/components/ui";
@@ -15,21 +14,19 @@ import type { DocInfo } from "@/lib/v2types";
 import { cn } from "@/lib/utils";
 import { VIEWER_TABS, type ViewerTab } from "./shared";
 
-/** Thanh trên: "‹ 文書", tên tài liệu, 5 tab dạng segmented, menu その他. */
+/** Thanh trên: "‹ 文書", tên tài liệu, 6 tab dạng segmented, menu その他. */
 export function TopBar({
   docId,
   info,
   infoLoading,
   tab,
   onTab,
-  page,
 }: {
   docId: string;
   info?: DocInfo;
   infoLoading: boolean;
   tab: ViewerTab;
   onTab: (t: ViewerTab) => void;
-  page: number;
 }) {
   const { t } = useTranslation();
   const source = `/api/documents/${docId}/source`;
@@ -114,13 +111,6 @@ export function TopBar({
                 <Download />
                 {t("viewer.top.downloadPdf")}
               </a>
-            </DropdownItem>
-            <DropdownSeparator />
-            <DropdownItem asChild>
-              <Link to={`/documents/${docId}/pages/${Math.max(1, page)}`}>
-                <ScanText />
-                {t("viewer.top.classicReview")}
-              </Link>
             </DropdownItem>
           </DropdownContent>
         </Dropdown>

@@ -312,12 +312,14 @@ export function PipelineTab({
   );
 }
 
-/** /documents/:docId/review → trang đầu tiên đang chờ review (không còn thì về tab パイプライン). */
+/** /documents/:docId/review → tab 検査 ở trang đầu tiên đang chờ review (không còn thì về tab パイプライン). */
 export function NextReviewRedirect() {
   const { docId = "" } = useParams();
   const pages = useQuery({ queryKey: ["pages", docId], queryFn: () => api.get<Page[]>(`/documents/${docId}/pages`) });
   if (pages.isError) return <Navigate to={`/documents/${docId}?tab=pipeline`} replace />;
   if (!pages.data) return <Skeleton className="h-80" />;
   const next = [...pages.data].sort((a, b) => a.page - b.page).find((p) => p.status === "review");
-  return <Navigate to={next ? `/documents/${docId}/pages/${next.page}` : `/documents/${docId}?tab=pipeline`} replace />;
+  return (
+    <Navigate to={next ? `/documents/${docId}?tab=inspect&page=${next.page}` : `/documents/${docId}?tab=pipeline`} replace />
+  );
 }

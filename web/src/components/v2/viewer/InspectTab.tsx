@@ -9,6 +9,7 @@ import { ApiError, api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { ElementDetail } from "./ElementDetail";
 import { type ElementFilter, ElementList } from "./ElementList";
+import { PageApproval } from "./PageApproval";
 import { PageCanvas } from "./PageCanvas";
 import { ChunksList, HistoryList, WeakList } from "./PanelLists";
 import { type PageMark, PromptDialog, Thumbnails, ZoomControl } from "./parts";
@@ -178,6 +179,7 @@ export function InspectTab({
             ) : elements.isLoading ? (
               <Skeleton className="h-5 w-28" />
             ) : null}
+            {total > 0 && <PageApproval docId={docId} page={page} onPage={onPage} canEdit={canEdit} />}
             <div className="flex-1" />
             <span className="hidden text-[11px] text-muted-foreground xl:inline">{t("viewer.page.keys")}</span>
             <ZoomControl zoom={zoom} onZoom={onZoom} />

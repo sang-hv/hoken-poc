@@ -14,7 +14,6 @@ export const en = {
     more: "More",
     openPdf: "Open original PDF",
     downloadPdf: "Download original PDF",
-    classicReview: "Open in classic review screen",
   },
   page: {
     of: "Page {{page}}/{{total}}",
@@ -211,6 +210,16 @@ export const en = {
     toNext: "Continues on next page",
     openTab: "Open in Chunks tab",
   },
+  approval: {
+    needsReview: "Needs review",
+    approved: "Approved",
+    by: "Approved by {{by}}",
+    approve: "Approve this page",
+    reopen: "Undo approval",
+    shortcut: "Ctrl / ⌘ + Enter",
+    approvedNext: "p.{{page}} approved — moved to p.{{next}}",
+    allApproved: "All pages approved — you can start chunking",
+  },
   gate: {
     ocrTitle: "Waiting for OCR review",
     chunkTitle: "Waiting for chunk review",
@@ -303,7 +312,6 @@ export const ja: typeof en = {
     more: "その他",
     openPdf: "原本PDFを開く",
     downloadPdf: "原本PDFをダウンロード",
-    classicReview: "従来のレビュー画面で開く",
   },
   page: {
     of: "ページ {{page}}/{{total}}",
@@ -498,6 +506,16 @@ export const ja: typeof en = {
     fromPrev: "前ページから続く",
     toNext: "次ページへ続く",
     openTab: "チャンクタブで開く",
+  },
+  approval: {
+    needsReview: "要レビュー",
+    approved: "承認済み",
+    by: "{{by}} が承認",
+    approve: "このページを承認",
+    reopen: "承認を取り消す",
+    shortcut: "Ctrl / ⌘ + Enter",
+    approvedNext: "p.{{page}} を承認しました — p.{{next}} へ移動",
+    allApproved: "すべてのページを承認しました。チャンク化を開始できます",
   },
   gate: {
     ocrTitle: "OCR レビュー待ちです",
