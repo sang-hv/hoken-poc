@@ -8,3 +8,4 @@ retrieval_report.csv
 node_modules/
 web/dist/
 *.tsbuildinfo
+*.egg-info/
