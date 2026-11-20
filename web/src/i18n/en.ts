@@ -444,6 +444,7 @@ const en = {
     configVersion: "Config v{{v}}",
     empty: "No jobs",
     log: "Live log",
+    latestOnly: "showing the latest {{n}}",
     autoScroll: "Auto-scroll",
     params: "Parameters",
   },

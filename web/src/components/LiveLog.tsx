@@ -34,12 +34,15 @@ export function LiveLog({
   className,
   showStep = true,
   height = "h-80",
+  max,
 }: {
   events: JobEvent[];
   connected?: boolean;
   className?: string;
   showStep?: boolean;
   height?: string;
+  /** số dòng tối đa đang giữ — đạt mức này thì báo chỉ hiện các dòng mới nhất */
+  max?: number;
 }) {
   const { t } = useTranslation();
   const text = useEventText();
@@ -58,6 +61,9 @@ export function LiveLog({
           {t("jobs.log")}
           {connected !== undefined && (
             <Badge tone={connected ? "success" : "neutral"}>{connected ? t("common.live") : t("common.offline")}</Badge>
+          )}
+          {max !== undefined && events.length >= max && (
+            <span className="text-xs font-normal text-muted-foreground">{t("jobs.latestOnly", { n: max })}</span>
           )}
         </div>
         <label className="flex items-center gap-2 text-xs text-muted-foreground">

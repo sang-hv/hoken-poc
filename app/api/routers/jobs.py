@@ -91,7 +91,8 @@ async def _sse(request: Request, c: Container, doc_id: str, job_id: str | None, 
         idle = 0 if evs else idle + 1
         if idle and idle % 15 == 0:
             yield ": keep-alive\n\n"
-        await asyncio.sleep(1.0)
+        # Không có sự kiện mới > 30 lần liên tiếp (tài liệu đã xong / đang nghỉ) → hỏi DB thưa hơn
+        await asyncio.sleep(1.0 if idle < 30 else 3.0)
 
 
 @router.get("/stream/documents/{doc_id}")

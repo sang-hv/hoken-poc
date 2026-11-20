@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import type { JobEvent } from "./types";
 
-/** Live log qua SSE. Tự kết nối lại (EventSource gửi Last-Event-ID). Giữ tối đa `max` dòng. */
+/** Live log qua SSE. Tự kết nối lại (EventSource gửi Last-Event-ID). Giữ tối đa `max` dòng mới nhất.
+ *  Server gửi sự kiện theo id tăng dần → chỉ cần nhớ id cuối để bỏ trùng (bộ nhớ không lớn dần). */
 export function useEventStream(url: string | null, onEvent?: (e: JobEvent) => void, max = 1000) {
   const [events, setEvents] = useState<JobEvent[]>([]);
   const [connected, setConnected] = useState(false);
@@ -12,7 +13,7 @@ export function useEventStream(url: string | null, onEvent?: (e: JobEvent) => vo
     if (!url) return;
     setEvents([]);
     const es = new EventSource(url, { withCredentials: true });
-    const seen = new Set<string>();
+    let last = "";
     let buffer: JobEvent[] = [];
     let timer: number | undefined;
     const flush = () => {
@@ -28,8 +29,8 @@ export function useEventStream(url: string | null, onEvent?: (e: JobEvent) => vo
     es.onerror = () => setConnected(false);
     es.addEventListener("log", (msg) => {
       const ev = JSON.parse((msg as MessageEvent).data) as JobEvent;
-      if (seen.has(ev.id)) return;
-      seen.add(ev.id);
+      if (ev.id <= last) return;
+      last = ev.id;
       buffer.push(ev);
       cb.current?.(ev);
       if (timer === undefined) timer = window.setTimeout(flush, 120);

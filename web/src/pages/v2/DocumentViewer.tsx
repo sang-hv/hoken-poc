@@ -18,7 +18,6 @@ import {
   type ViewerTab,
   isTypingTarget,
   useDocInfo,
-  useDocPages,
   vk,
 } from "@/components/v2/viewer/shared";
 import { ApiError } from "@/lib/api";
@@ -27,6 +26,10 @@ import { useEventStream } from "@/lib/sse";
 import type { JobEvent } from "@/lib/types";
 
 const DONE_STATUSES = ["indexed", "failed"];
+/** Số dòng live log giữ trong bộ nhớ / DOM. Server gửi lại 200 dòng gần nhất khi kết nối. */
+const LOG_MAX = 500;
+/** Sự kiện chỉ báo tiến độ, không đổi nội dung trang / phần tử / chất lượng. */
+const PROGRESS_ONLY = /^(job\.|cu\.started$|chunk\.(rough|round|section)$|index\.progress$)/;
 
 export default function DocumentViewerPage() {
   const { docId = "" } = useParams();
@@ -37,8 +40,7 @@ export default function DocumentViewerPage() {
   const [params, setParams] = useSearchParams();
 
   const info = useDocInfo(docId);
-  const pages = useDocPages(docId);
-  const total = info.data?.pages || pages.data?.length || 0;
+  const total = info.data?.pages ?? 0;
 
   const tabParam = params.get("tab") as ViewerTab | null;
   // Tab mặc định chốt một lần theo trạng thái lúc mở (không tự nhảy tab khi pipeline chạy xong).
@@ -94,21 +96,29 @@ export default function DocumentViewerPage() {
     return () => window.removeEventListener("keydown", onKey);
   }, [onPage]);
 
-  // Live: pipeline / AI ghi kết quả → làm mới dữ liệu của màn (gom lại, tối đa ~1 lần / 1.5 s).
+  // Live: một kết nối SSE cho cả màn (live log của tab パイプライン dùng chung). Sự kiện mới → làm mới dữ liệu,
+  // gom lại tối đa ~1 lần / 1.5 s; React Query chỉ tải lại query đang hiển thị, query khác chỉ đánh dấu cũ.
+  // Sự kiện tiến độ (job.*, vòng chunk, index.progress…) chỉ làm mới tài liệu (nhẹ); nội dung / chất lượng chỉ tải
+  // lại khi có sự kiện làm đổi nội dung — tài liệu lớn không bị tải lại chất lượng mỗi 1.5 s lúc đang index.
   const throttle = useRef<number | undefined>(undefined);
+  const contentChanged = useRef(false);
   useEffect(() => () => window.clearTimeout(throttle.current), []);
   const onEvent = useCallback(
-    (_e: JobEvent) => {
+    (e: JobEvent) => {
+      if (!PROGRESS_ONLY.test(e.code)) contentChanged.current = true;
       if (throttle.current !== undefined) return;
       throttle.current = window.setTimeout(() => {
         throttle.current = undefined;
-        qc.invalidateQueries({ queryKey: vk.all(docId) });
-        qc.invalidateQueries({ queryKey: vk.pages(docId) });
+        qc.invalidateQueries({ queryKey: ["document", docId] });
+        if (contentChanged.current) {
+          contentChanged.current = false;
+          qc.invalidateQueries({ queryKey: vk.all(docId) });
+          }
       }, 1500);
     },
     [qc, docId],
   );
-  useEventStream(docId ? `/api/stream/documents/${docId}` : null, onEvent, 20);
+  const { events, connected } = useEventStream(docId ? `/api/stream/documents/${docId}` : null, onEvent, LOG_MAX);
 
   const notFound = info.error instanceof ApiError && (info.error.status === 404 || info.error.status === 403);
   const processing = !!info.data && !DONE_STATUSES.includes(info.data.status);
@@ -151,7 +161,7 @@ export default function DocumentViewerPage() {
           <Loader2 className="size-6 animate-spin" aria-hidden />
         </div>
       ) : tab === "pipeline" ? (
-        <PipelineTab docId={docId} onTab={onTab} />
+        <PipelineTab docId={docId} onTab={onTab} events={events} connected={connected} maxEvents={LOG_MAX} />
       ) : tab === "original" ? (
         <OriginalTab
           docId={docId}

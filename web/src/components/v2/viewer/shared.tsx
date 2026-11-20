@@ -5,7 +5,7 @@ import { useTranslation } from "react-i18next";
 import { useErrorText } from "@/components/common";
 import { Badge, Button, type Tone } from "@/components/ui";
 import { ApiError, api } from "@/lib/api";
-import type { Chunk, Page } from "@/lib/types";
+import type { Chunk } from "@/lib/types";
 import type {
   DocInfo,
   DocQuality,
@@ -59,9 +59,6 @@ const noRetry4xx = (count: number, e: unknown) => !(e instanceof ApiError && e.s
 
 export function useDocInfo(doc: string) {
   return useQuery({ queryKey: vk.info(doc), queryFn: () => api.get<DocInfo>(`/documents/${doc}/info`), retry: noRetry4xx });
-}
-export function useDocPages(doc: string) {
-  return useQuery({ queryKey: vk.pages(doc), queryFn: () => api.get<Page[]>(`/documents/${doc}/pages`), retry: noRetry4xx });
 }
 export function useQuality(doc: string, poll = false) {
   return useQuery({

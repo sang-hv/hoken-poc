@@ -445,6 +445,7 @@ const ja: Messages = {
     configVersion: "設定 v{{v}}",
     empty: "ジョブはありません",
     log: "ライブログ",
+    latestOnly: "最新 {{n}} 件を表示",
     autoScroll: "自動スクロール",
     params: "パラメータ",
   },
