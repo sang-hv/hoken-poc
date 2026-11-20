@@ -22,7 +22,7 @@ import type {
 import { cn } from "@/lib/utils";
 
 export type ViewerTab = "pipeline" | "original" | "text" | "chunks" | "insights" | "inspect";
-export const VIEWER_TABS: ViewerTab[] = ["pipeline", "original", "text", "chunks", "insights", "inspect"];
+export const VIEWER_TABS: ViewerTab[] = ["pipeline", "original", "text", "insights", "inspect", "chunks"];
 export type PanelTab = "elements" | "chunks" | "weak" | "history";
 
 /* ---------------------------------------------------------------- Query keys
