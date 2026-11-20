@@ -37,6 +37,8 @@ export interface Doc {
   created_at: string;
   updated_at: string;
   config_version: number;
+  auto_review?: boolean; // pipeline tự duyệt trang/chunk (review.auto_review lúc upload)
+  file_type?: "pdf" | "image";
   stats: Record<string, number>;
 }
 

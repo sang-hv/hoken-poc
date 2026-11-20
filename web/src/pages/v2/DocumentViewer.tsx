@@ -1,4 +1,5 @@
-/** Chi tiết nguồn — 原本 / テキスト / インサイト / 検査 (frontend B2). Route: /notebooks/:nbId/sources/:docId[?page=N&tab=…] */
+/** Chi tiết tài liệu — パイプライン / 原本 / テキスト / インサイト / 検査. Route: /documents/:docId[?page=N&tab=…]
+ *  Không có ?tab: tài liệu đã index xong mở 原本, còn đang chạy / lỗi / chờ duyệt thì mở パイプライン. */
 import { useQueryClient } from "@tanstack/react-query";
 import { FileQuestion, Loader2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -7,6 +8,7 @@ import { Link, useParams, useSearchParams } from "react-router-dom";
 import { EmptyState, buttonVariants } from "@/components/ui";
 import { InsightsTab } from "@/components/v2/viewer/InsightsTab";
 import { InspectTab } from "@/components/v2/viewer/InspectTab";
+import { PipelineTab } from "@/components/v2/viewer/PipelineTab";
 import { OriginalTab } from "@/components/v2/viewer/OriginalTab";
 import { TextTab } from "@/components/v2/viewer/TextTab";
 import { TopBar } from "@/components/v2/viewer/TopBar";
@@ -27,7 +29,7 @@ import type { JobEvent } from "@/lib/types";
 const DONE_STATUSES = ["indexed", "failed"];
 
 export default function DocumentViewerPage() {
-  const { nbId = "", docId = "" } = useParams();
+  const { docId = "" } = useParams();
   const { t } = useTranslation();
   const { can } = useAuth();
   const canEdit = can("reviewer");
@@ -39,7 +41,10 @@ export default function DocumentViewerPage() {
   const total = info.data?.pages || pages.data?.length || 0;
 
   const tabParam = params.get("tab") as ViewerTab | null;
-  const tab: ViewerTab = tabParam && VIEWER_TABS.includes(tabParam) ? tabParam : "original";
+  // Tab mặc định chốt một lần theo trạng thái lúc mở (không tự nhảy tab khi pipeline chạy xong).
+  const defaultTab = useRef<ViewerTab | null>(null);
+  if (defaultTab.current === null && info.data) defaultTab.current = info.data.status === "indexed" ? "original" : "pipeline";
+  const tab: ViewerTab = tabParam && VIEWER_TABS.includes(tabParam) ? tabParam : (defaultTab.current ?? "pipeline");
   const rawPage = Number(params.get("page") ?? "1");
   const page = Math.min(Math.max(1, Number.isFinite(rawPage) ? Math.floor(rawPage) : 1), Math.max(1, total));
 
@@ -61,8 +66,7 @@ export default function DocumentViewerPage() {
     setRef.current(
       (prev) => {
         const next = new URLSearchParams(prev);
-        if (k === "original") next.delete("tab");
-        else next.set("tab", k);
+        next.set("tab", k);
         return next;
       },
       { replace: true },
@@ -112,9 +116,9 @@ export default function DocumentViewerPage() {
 
   return (
     <div className="flex h-full min-h-[32rem] flex-col bg-background">
-      <TopBar nbId={nbId} docId={docId} info={info.data} infoLoading={info.isLoading} tab={tab} onTab={onTab} page={page} />
+      <TopBar docId={docId} info={info.data} infoLoading={info.isLoading} tab={tab} onTab={onTab} page={page} />
 
-      {processing && (
+      {processing && tab !== "pipeline" && (
         <div role="status" className="flex shrink-0 items-center gap-2 border-b border-border bg-info-soft px-4 py-1.5 text-xs text-info">
           <Loader2 className="size-3.5 animate-spin" aria-hidden />
           <span className="font-medium">{t("viewer.state.processing")}</span>
@@ -130,7 +134,7 @@ export default function DocumentViewerPage() {
             hint={t("viewer.state.notFoundHint")}
             action={
               <Link
-                to={nbId ? `/notebooks/${nbId}` : `/documents/${docId}`}
+                to="/documents"
                 className={buttonVariants({ variant: "outline", size: "sm" })}
               >
                 {t("viewer.top.back")}
@@ -142,6 +146,12 @@ export default function DocumentViewerPage() {
         <div className="flex flex-1 items-center justify-center">
           <QueryError error={info.error} onRetry={() => info.refetch()} />
         </div>
+      ) : !info.data ? (
+        <div className="flex flex-1 items-center justify-center text-muted-foreground">
+          <Loader2 className="size-6 animate-spin" aria-hidden />
+        </div>
+      ) : tab === "pipeline" ? (
+        <PipelineTab docId={docId} onTab={onTab} />
       ) : tab === "original" ? (
         <OriginalTab
           docId={docId}

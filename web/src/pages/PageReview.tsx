@@ -456,7 +456,7 @@ export default function PageReviewPage() {
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-2 overflow-x-auto border-b border-border bg-card px-4 py-2 [&>*]:shrink-0">
-        <Button variant="ghost" size="sm" onClick={() => nav(`/documents/${docId}`)}>
+        <Button variant="ghost" size="sm" onClick={() => nav(`/documents/${docId}?tab=pipeline`)}>
           <ArrowLeft />
           <span className="hidden max-w-40 truncate 2xl:inline">{doc.data?.name ?? t("review.backToDoc")}</span>
         </Button>

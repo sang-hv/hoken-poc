@@ -47,9 +47,10 @@ async def upload(
     data = await file.read(MAX_UPLOAD + 1)
     if len(data) > MAX_UPLOAD:
         raise HTTPException(413, {"code": "too_large"})
+    pdf, file_type = pl.to_pdf(data)  # PDF hoặc ảnh PNG/JPEG (→ PDF 1 trang)
     doc = pl.create_document(
         c,
-        data=data,
+        data=pdf,
         filename=file.filename or "upload.pdf",
         name=name,
         kind=kind,
@@ -58,7 +59,11 @@ async def upload(
         page_to=page_to,
         actor=user.email,
         auto_review=c.config.pipeline()[1].review.auto_review,
+        file_type=file_type,
     )
+    if file_type == "image":  # kích thước file khách tải lên, không phải PDF đã đổi
+        doc.size_bytes = len(data)
+        doc = c.repo.save_doc(doc)
     return doc.model_dump(mode="json")
 
 

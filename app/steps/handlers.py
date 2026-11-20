@@ -164,7 +164,7 @@ def stitch_step(ctx: StepCtx) -> list[Next]:
     )
     pl.refresh_doc(c, doc.id, DocStatus.ocr_review)
     pl.refresh_doc(c, doc.id)
-    if doc.auto_review:  # UI v2 (sổ tay): không chờ người review, chạy tiếp luồng tự động
+    if doc.auto_review:  # review.auto_review: không chờ người review, chạy tiếp luồng tự động
         return [Next("auto_review")]
     return []
 
@@ -390,7 +390,7 @@ def index_step(ctx: StepCtx) -> list[Next]:
     ctx.emit("index.done", chunks=len(chunks), dims=embedder.dims)
     pl.refresh_doc(c, doc.id, DocStatus.indexed)
     if doc.auto_review:  # người sửa phần tử trong lúc chunk/index đang chạy → chạy lại với nội dung mới
-        from app.services import notebooks
+        from app.services import inspect
 
-        notebooks.run_pending_reindex(c, doc.id)
+        inspect.run_pending_reindex(c, doc.id)
     return []

@@ -35,7 +35,7 @@ python -m app.main serve | worker --queues docling,ai,light | job --queues ai --
 - Tài liệu `auto_review = true` (mọi upload, theo tuỳ chọn `review.auto_review`, mặc định bật): pipeline tự chạy hết — `stitch` → `auto_review`
   (dựng phần tử, tự đọc lại dưới `quality.auto_vlm_below`, gắn điểm yếu dưới `quality.weak_confidence`,
   tự duyệt trang với người duyệt `auto`) → `chunk` → tự `index`. Điểm yếu **không** chặn luồng; người dùng sửa
-  (→ `notebooks.reindex_document`: chunk + index lại) hoặc xác nhận (`inspect.accept_element`) ở màn 検査.
+  (→ `inspect.reindex_document`: chunk + index lại) hoặc xác nhận (`inspect.accept_element`) ở màn 検査.
 - Tài liệu `auto_review = false` (khi tắt `review.auto_review`; test luồng này dùng `tests.conftest.manual_review`):
   mọi trang qua `review` → `approved`; mọi chunk `draft` → `approved`
   trước khi index. Sửa OCR sau khi đã chunk → `_invalidate_chunks` đưa tài liệu về `ocr_review`.

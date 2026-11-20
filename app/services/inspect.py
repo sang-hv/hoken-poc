@@ -23,6 +23,7 @@ from app.ports import ChatMessage
 from app.services import pipeline as pl
 from app.services.config_service import NotConfigured
 from app.services.container import Container
+from app.services.jobs import emit
 from app.steps import elements as E
 from app.steps import rules
 from app.steps.common import crop_png, k_page, k_source, render_page_png
@@ -304,7 +305,7 @@ def page_history(c: Container, doc_id: str, n: int) -> list[dict]:
 
 # ================================================================== sửa / đọc lại / xác nhận
 def _require_editable(c: Container, doc: Document, p: Page) -> None:
-    # Tài liệu của sổ tay: cho sửa cả khi đang chunk/index — reindex_document ghi cờ và chạy lại sau
+    # Tài liệu tự chạy (auto_review): cho sửa cả khi đang chunk/index — reindex_document ghi cờ và chạy lại sau
     if not doc.auto_review and doc.status in (DocStatus.chunking, DocStatus.indexing):
         raise InspectError("doc_busy")
     if p.status not in READY:
@@ -326,13 +327,42 @@ def _commit(c: Container, doc: Document, p: Page, state: dict, source: str, acto
     return p.current_version
 
 
-def _after_change(c: Container, doc: Document, actor: str) -> None:
-    """Nội dung trang đã đổi: sổ tay (auto_review) → chunk + index lại; tài liệu thường → chunk cũ hết hiệu lực."""
-    if doc.auto_review:
-        from app.services import notebooks
+FLAGS = "doc_flags"  # cờ theo tài liệu (DocStore), vd reindex_pending
 
+
+def reindex_document(c: Container, doc_id: str, actor: str) -> None:
+    """Sau khi nội dung trang của tài liệu auto_review bị sửa: chunk + index lại. Tài liệu duyệt tay: không làm gì."""
+    doc = c.repo.get_doc(doc_id)
+    if not doc or not doc.auto_review:
+        return None
+    if doc.status in (DocStatus.chunking, DocStatus.indexing):
+        # Đang chunk/index: không chặn người sửa — ghi cờ, job index xong sẽ chạy lại (run_pending_reindex)
+        c.repo.s.put(FLAGS, doc_id, "reindex_pending", {"id": "reindex_pending", "by": actor, "at": now_iso()})
+        return None
+    pages = c.repo.list_pages(doc_id)
+    if not pages or any(p.status not in READY for p in pages):
+        return None  # còn trang chưa qua nối trang / lỗi — luồng tự động sẽ chạy tiếp hoặc cần Retry
+    pl.auto_approve_pages(c, doc_id)
+    emit(c, doc_id, "auto.reindex", by=actor)
+    pl.start_chunking(c, doc_id, actor)
+    return None
+
+
+def run_pending_reindex(c: Container, doc_id: str) -> None:
+    """Gọi khi job index của tài liệu auto_review xong: có sửa trong lúc chạy thì chunk + index lại."""
+    flag = c.repo.s.get(FLAGS, doc_id, "reindex_pending")
+    if not flag:
+        return None
+    c.repo.s.delete(FLAGS, doc_id, "reindex_pending")
+    reindex_document(c, doc_id, flag.get("by") or AUTO)
+    return None
+
+
+def _after_change(c: Container, doc: Document, actor: str) -> None:
+    """Nội dung trang đã đổi: tài liệu tự chạy (auto_review) → chunk + index lại; duyệt tay → chunk cũ hết hiệu lực."""
+    if doc.auto_review:
         try:
-            notebooks.reindex_document(c, doc.id, actor)
+            reindex_document(c, doc.id, actor)
         except pl.PipelineError as e:  # tài liệu đang bận → lần sửa sau sẽ index lại
             log.warning("inspect.reindex_skipped doc=%s code=%s", doc.id, e.code)
     else:

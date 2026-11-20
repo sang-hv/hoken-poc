@@ -1,6 +1,7 @@
 /** Chữ cho màn chi tiết nguồn: 原本 / テキスト / インサイト / 検査 (frontend B2). `ja` phải đủ khoá như `en`. */
 export const en = {
   tabs: {
+    pipeline: "Pipeline",
     original: "Original",
     text: "Text",
     insights: "Insights",
@@ -8,8 +9,7 @@ export const en = {
     label: "View",
   },
   top: {
-    back: "Back to notebook",
-    notebook: "Notebook",
+    back: "Back to documents",
     more: "More",
     openPdf: "Open original PDF",
     downloadPdf: "Download original PDF",
@@ -218,6 +218,7 @@ export const en = {
 
 export const ja: typeof en = {
   tabs: {
+    pipeline: "パイプライン",
     original: "原本",
     text: "テキスト",
     insights: "インサイト",
@@ -225,8 +226,7 @@ export const ja: typeof en = {
     label: "表示",
   },
   top: {
-    back: "ノートブックに戻る",
-    notebook: "ノートブック",
+    back: "文書一覧に戻る",
     more: "その他",
     openPdf: "原本PDFを開く",
     downloadPdf: "原本PDFをダウンロード",

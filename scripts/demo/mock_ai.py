@@ -101,9 +101,9 @@ def _chat_rag(user: str) -> str:
 
 
 def _chat_answer(messages: list[dict], json_mode: bool) -> str:
-    from scripts.demo import mock_inspect, mock_notebook  # UI v2: mỗi phần một module, tránh sửa chồng
+    from scripts.demo import mock_inspect  # UI v2: tab 検査 (đọc lại, chấm điểm, insights)
 
-    for mod in (mock_notebook, mock_inspect):
+    for mod in (mock_inspect,):
         out = mod.answer(messages, json_mode)
         if out is not None:
             return out

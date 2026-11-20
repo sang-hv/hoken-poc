@@ -47,7 +47,7 @@ export function UploadDialog({ open, onOpenChange }: { open: boolean; onOpenChan
   const pick = (f: File | undefined) => {
     if (!f) return;
     setFile(f);
-    if (!nameTouched) setForm((s) => ({ ...s, name: f.name.replace(/\.pdf$/i, "") }));
+    if (!nameTouched) setForm((s) => ({ ...s, name: f.name.replace(/\.(pdf|png|jpe?g)$/i, "") }));
   };
 
   const submit = async () => {
@@ -124,7 +124,7 @@ export function UploadDialog({ open, onOpenChange }: { open: boolean; onOpenChan
           <input
             ref={input}
             type="file"
-            accept="application/pdf,.pdf"
+            accept="application/pdf,.pdf,image/png,image/jpeg,.png,.jpg,.jpeg"
             className="hidden"
             onChange={(e) => pick(e.target.files?.[0])}
           />

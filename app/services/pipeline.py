@@ -30,6 +30,29 @@ class PipelineError(ValueError):
 
 
 # ================================================================== upload
+def to_pdf(data: bytes) -> tuple[bytes, str]:
+    """PDF giữ nguyên; PNG/JPEG → PDF 1 trang (cạnh dài ≈ A4 khi render 72 dpi, ảnh gốc giữ nguyên độ phân giải)."""
+    if data.startswith(b"%PDF"):
+        return data, "pdf"
+    if not (data.startswith(b"\x89PNG\r\n\x1a\n") or data.startswith(b"\xff\xd8\xff")):
+        raise PipelineError("unsupported_file")
+    import io
+
+    from PIL import Image, ImageOps, UnidentifiedImageError
+
+    try:
+        img = Image.open(io.BytesIO(data))
+        img = ImageOps.exif_transpose(img)
+        if img.mode not in ("RGB", "L"):
+            img = img.convert("RGB")
+    except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as e:
+        raise PipelineError("bad_image") from e
+    resolution = max(72.0, max(img.size) * 72.0 / 842.0)
+    buf = io.BytesIO()
+    img.save(buf, format="PDF", resolution=resolution)
+    return buf.getvalue(), "image"
+
+
 def create_document(
     c: Container,
     *,

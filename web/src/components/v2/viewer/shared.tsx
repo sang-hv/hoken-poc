@@ -21,8 +21,8 @@ import type {
 } from "@/lib/v2types";
 import { cn } from "@/lib/utils";
 
-export type ViewerTab = "original" | "text" | "insights" | "inspect";
-export const VIEWER_TABS: ViewerTab[] = ["original", "text", "insights", "inspect"];
+export type ViewerTab = "pipeline" | "original" | "text" | "insights" | "inspect";
+export const VIEWER_TABS: ViewerTab[] = ["pipeline", "original", "text", "insights", "inspect"];
 export type PanelTab = "elements" | "chunks" | "weak" | "history";
 
 /* ---------------------------------------------------------------- Query keys
@@ -39,7 +39,6 @@ export const vk = {
   chunks: (doc: string, page: number) => ["inspect", doc, "chunks", page] as const,
   history: (doc: string, page: number) => ["inspect", doc, "history", page] as const,
   pages: (doc: string) => ["pages", doc] as const, // dùng chung với màn cũ
-  notebook: (nb: string) => ["notebook", nb] as const,
 };
 
 /** Sau khi sửa / đọc lại / xác nhận một phần tử: làm mới những gì phụ thuộc vào nó. */

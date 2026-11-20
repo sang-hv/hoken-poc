@@ -79,7 +79,7 @@ export default function DashboardPage() {
               icon={<Loader2 className={d.jobs.running ? "animate-spin" : ""} />}
               tone="info"
               hint={d.jobs.failed ? `${d.jobs.failed} ${t("jobStatus.failed")}` : undefined}
-              onClick={() => nav("/jobs")}
+              onClick={() => nav("/documents")}
             />
           </>
         ) : (
@@ -185,7 +185,7 @@ export default function DashboardPage() {
               <ul className="flex flex-col gap-2">
                 {d?.recent_failed.map((j) => (
                   <li key={j.id}>
-                    <Link to={`/jobs?job=${encodeURIComponent(j.id)}`} className="flex items-start gap-2 text-sm hover:opacity-80">
+                    <Link to={`/documents/${j.doc_id}?tab=pipeline`} className="flex items-start gap-2 text-sm hover:opacity-80">
                       <XCircle className="mt-0.5 size-4 shrink-0 text-danger" />
                       <span className="min-w-0">
                         <span className="font-medium">{t(`steps.${j.step}`)}</span>

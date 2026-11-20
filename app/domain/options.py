@@ -111,14 +111,6 @@ class QualityOptions(BaseModel):
     grade_fair: int = 60  # ≥ mức này = fair (要注意), thấp hơn = poor (不良)
 
 
-class NotebookOptions(BaseModel):
-    """Sổ tay demo (UI v2): pipeline tự chạy hết + chat Agentic RAG. Chủ: backend A1."""
-
-    agent_steps: int = 3  # số lần tìm tối đa của agent (chế độ 標準)
-    agent_steps_deep: int = 5  # chế độ じっくり回答
-    top_k: int = 6
-
-
 class PipelineOptions(BaseModel):
     docling: DoclingOptions = Field(default_factory=DoclingOptions)
     routing: RoutingOptions = Field(default_factory=RoutingOptions)
@@ -129,4 +121,3 @@ class PipelineOptions(BaseModel):
     index: IndexOptions = Field(default_factory=IndexOptions)
     chat: ChatOptions = Field(default_factory=ChatOptions)
     quality: QualityOptions = Field(default_factory=QualityOptions)
-    notebook: NotebookOptions = Field(default_factory=NotebookOptions)

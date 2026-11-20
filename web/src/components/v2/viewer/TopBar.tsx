@@ -1,5 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
-import { ChevronLeft, Download, ExternalLink, FileImage, FileText, MoreHorizontal, ScanText } from "lucide-react";
+import { ChevronLeft, Download, ExternalLink, FileImage, FileText, MoreHorizontal, ScanText, Workflow } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import {
@@ -12,14 +11,12 @@ import {
   DropdownTrigger,
   Skeleton,
 } from "@/components/ui";
-import { api } from "@/lib/api";
-import type { DocInfo, NotebookDetail } from "@/lib/v2types";
+import type { DocInfo } from "@/lib/v2types";
 import { cn } from "@/lib/utils";
-import { VIEWER_TABS, type ViewerTab, vk } from "./shared";
+import { VIEWER_TABS, type ViewerTab } from "./shared";
 
-/** Thanh trên: "‹ sổ tay", tên tài liệu, 4 tab dạng segmented, menu その他. */
+/** Thanh trên: "‹ 文書", tên tài liệu, 5 tab dạng segmented, menu その他. */
 export function TopBar({
-  nbId,
   docId,
   info,
   infoLoading,
@@ -27,7 +24,6 @@ export function TopBar({
   onTab,
   page,
 }: {
-  nbId: string;
   docId: string;
   info?: DocInfo;
   infoLoading: boolean;
@@ -36,12 +32,6 @@ export function TopBar({
   page: number;
 }) {
   const { t } = useTranslation();
-  const nb = useQuery({
-    queryKey: vk.notebook(nbId),
-    queryFn: () => api.get<NotebookDetail>(`/notebooks/${nbId}`),
-    enabled: !!nbId,
-    staleTime: 30_000,
-  });
   const source = `/api/documents/${docId}/source`;
   const Icon = info?.file_type === "image" ? FileImage : FileText;
 
@@ -49,13 +39,13 @@ export function TopBar({
     <header className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 border-b border-border bg-card px-3 py-2 lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
       <div className="flex min-w-0 items-center gap-1 lg:col-start-1 lg:row-start-1">
         <Link
-          to={nbId ? `/notebooks/${nbId}` : `/documents/${docId}`}
+          to="/documents"
           aria-label={t("viewer.top.back")}
           title={t("viewer.top.back")}
           className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "min-w-0 shrink-0 gap-1 px-2 text-muted-foreground")}
         >
           <ChevronLeft />
-          <span className="hidden max-w-44 truncate sm:inline">{nbId ? (nb.data?.name ?? t("viewer.top.notebook")) : t("nav.documents")}</span>
+          <span className="hidden max-w-44 truncate sm:inline">{t("nav.documents")}</span>
         </Link>
         <span className="mx-1 hidden h-5 w-px bg-border sm:block" aria-hidden />
         <Icon className="size-4 shrink-0 text-danger" aria-hidden />
@@ -92,10 +82,11 @@ export function TopBar({
             tabIndex={tab === k ? 0 : -1}
             onClick={() => onTab(k)}
             className={cn(
-              "flex cursor-pointer items-center gap-1.5 rounded-md px-3.5 py-1.5 text-sm font-medium transition sm:px-5",
+              "flex cursor-pointer items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm font-medium transition sm:px-4",
               tab === k ? "bg-card text-foreground shadow-card" : "text-muted-foreground hover:text-foreground",
             )}
           >
+            {k === "pipeline" && <Workflow className="size-4" aria-hidden />}
             {k === "inspect" && <ScanText className="size-4" aria-hidden />}
             {t(`viewer.tabs.${k}`)}
           </button>

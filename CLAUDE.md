@@ -11,7 +11,7 @@ Skill của repo (đọc trước khi sửa): `.claude/skills/architecture`, `.c
   dự phòng Bedrock profile `jp.`. **Dev** được linh hoạt, miễn là dùng dịch vụ Content Understanding (Azure) và LLM.
 - **Content Understanding luôn là Azure**, kể cả khi phần hạ tầng còn lại chạy Local hoặc AWS.
 - **Pipeline tự chạy từ đầu đến cuối** (OCR → chunk → embedding → index), không chờ người duyệt — cho mọi tài liệu
-  tải lên (sổ tay và màn 文書), theo tuỳ chọn `review.auto_review` (mặc định bật).
+  tải lên ở màn 文書, theo tuỳ chọn `review.auto_review` (mặc định bật).
   Phần tử có confidence **dưới ngưỡng cài đặt** (`quality.auto_vlm_below` → AI tự đọc lại; `quality.weak_confidence`
   → gắn ⚠ cảnh báo) thì hiện cho người dùng **sửa** (→ tự chunk + index lại) hoặc **bỏ qua** (xác nhận đúng).
   Cảnh báo không chặn pipeline. Tắt `review.auto_review` thì quay lại duyệt tay từng trang / chunk.
