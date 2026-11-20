@@ -37,7 +37,8 @@ Pipeline tự chạy hết để khách chat được ngay; **không bỏ** vi�
 - Phần tử điểm thấp được **tự gọi VLM** đọc lại trước (theo `quality.auto_vlm_below`); vẫn thấp thì đánh dấu `weak`.
 - 「要確認 N件」 trên tab パイプライン và 検査.
 - Tài liệu upload khi `review.auto_review = true`: trang/chunk được duyệt tự động với người duyệt `auto`; sửa
-  phần tử → chunk + index lại. Tắt tuỳ chọn thì quay lại duyệt tay.
+  phần tử → chỉ chunk lại các mục (section) dính tới trang vừa sửa rồi index lại — chunk khác, kể cả chunk người đã
+  sửa / gộp / tách ở tab チャンク, được giữ (mỗi chunk ghi khoá mục `sections`, vd `M017#0`). Tắt tuỳ chọn thì quay lại duyệt tay.
 
 Mã điểm yếu (`code`): `low_confidence` · `picture_no_desc` (hình chưa có mô tả) · `missing_text` (vùng có chữ nhưng
 đọc ra rỗng/quá ngắn) · `table_suspect` (bảng gộp ô / tràn trang / số cột lệch) · `reread` (đã phải đọc lại bằng

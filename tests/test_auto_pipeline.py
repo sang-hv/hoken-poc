@@ -160,13 +160,19 @@ def test_edit_while_indexing_is_deferred_then_reindexed(container, monkeypatch):
     """Sửa phần tử khi tài liệu đang chunk/index: không chặn, ghi cờ, index xong thì chạy lại."""
     c = container
     c.repo.save_doc(Document(id="d1", name="x", auto_review=True, status=DocStatus.indexing))
-    inspect_svc.reindex_document(c, "d1", "u1")
-    assert c.repo.s.get(inspect_svc.FLAGS, "d1", "reindex_pending")["by"] == "u1"
+    inspect_svc.reindex_document(c, "d1", "u1", [2])
+    inspect_svc.reindex_document(c, "d1", "u1", [3, 2])  # gộp các trang đã sửa
+    assert c.repo.s.get(inspect_svc.FLAGS, "d1", "reindex_pending")["pages"] == [2, 3]
     called = []
-    monkeypatch.setattr(inspect_svc, "reindex_document", lambda c_, d, a: called.append((d, a)))
+    monkeypatch.setattr(inspect_svc, "reindex_document", lambda c_, d, a, pages=None: called.append((d, a, pages)))
     inspect_svc.run_pending_reindex(c, "d1")
     inspect_svc.run_pending_reindex(c, "d1")  # cờ đã xoá → không chạy lại lần 2
-    assert called == [("d1", "u1")]
+    assert called == [("d1", "u1", [2, 3])]
+    monkeypatch.undo()
+    inspect_svc.reindex_document(c, "d1", "u1", [2])
+    inspect_svc.reindex_document(c, "d1", "u1", None)  # có lần cần chunk lại toàn bộ → cờ "toàn bộ"
+    inspect_svc.reindex_document(c, "d1", "u1", [4])
+    assert c.repo.s.get(inspect_svc.FLAGS, "d1", "reindex_pending")["pages"] is None
 
 
 def test_chunk_edit_on_auto_doc_reindexes(container, sample_pdf):
@@ -199,3 +205,75 @@ def test_chunk_edit_on_auto_doc_reindexes(container, sample_pdf):
     drain(c)
     assert len(c.repo.list_chunks(doc.id)) == n + 1 and c.repo.get_doc(doc.id).status == DocStatus.indexed
     assert c.config.overrides["search"].count() == n + 1
+
+
+def test_partial_plan_pure():
+    from app.steps import rules
+
+    keys = ["_#0", "M015-2#0", "M016#0", "A000#0"]
+    pages = [{1}, {1, 2}, {2}, {3}]
+    chunks = [(["_#0"], 1, 1), (["M015-2#0"], 1, 2), (["M016#0"], 2, 2), (["A000#0"], 3, 3)]
+    aff, drop = rules.partial_plan(keys, pages, {3}, chunks)
+    assert aff == {"A000#0"} and drop == {3}
+    # sửa trang 2: mục M015-2 (trải 1–2) và M016 chunk lại; chunk trang 1 / 3 giữ nguyên
+    aff, drop = rules.partial_plan(keys, pages, {2}, chunks)
+    assert aff == {"M015-2#0", "M016#0"} and drop == {1, 2}
+    # chunk gộp M016 + A000: sửa trang 3 → bỏ cả chunk gộp và sinh lại cả M016
+    merged = [(["_#0"], 1, 1), (["M015-2#0"], 1, 2), (["M016#0", "A000#0"], 2, 3)]
+    aff, drop = rules.partial_plan(keys, pages, {3}, merged)
+    assert aff == {"M016#0", "A000#0"} and drop == {2}
+    # chunk cũ chưa có khoá mục → chunk lại toàn bộ
+    assert rules.partial_plan(keys, pages, {3}, [([], 1, 3)]) is None
+    assert rules.section_keys(
+        [rules.Section("M1", "", []), rules.Section("", "", []), rules.Section("M1", "", [])]
+    ) == [
+        "M1#0",
+        "_#0",
+        "M1#1",
+    ]
+
+
+def test_element_edit_keeps_human_chunk_edits_elsewhere(container, sample_pdf):
+    """Sửa nội dung trang 1 (検査) → chỉ chunk lại mục dính trang 1; chunk người đã sửa ở trang 3 được giữ."""
+    from app.services import chunks as chunk_svc
+
+    c = container
+    _search_ready(c)
+    doc = _auto_doc(c, sample_pdf)
+    drain(c)
+    before = c.repo.list_chunks(doc.id)
+    assert all(x.sections for x in before)
+    a000 = next(x for x in before if x.item_code == "A000")
+    m016 = next(x for x in before if x.item_code == "M016")
+    chunk_svc.update_chunk(
+        c,
+        doc.id,
+        a000.id,
+        text=a000.text + "\n人が追記した注記",
+        item_code="A000",
+        title=a000.title,
+        page_from=None,
+        page_to=None,
+        actor="u1",
+    )
+    drain(c)
+
+    p1 = c.repo.get_page(doc.id, 1)
+    pl.edit_page(c, doc.id, 1, pl.page_markdown(c, p1).replace("1,200 points", "1,300 points"), "u2")
+    inspect_svc.reindex_document(c, doc.id, "u2", [1])
+    drain(c)
+
+    assert c.repo.get_doc(doc.id).status == DocStatus.indexed
+    after = {x.id: x for x in c.repo.list_chunks(doc.id)}
+    kept = after[a000.id]
+    assert "人が追記した注記" in kept.text and kept.edited_by == "u1" and kept.status == ChunkStatus.indexed
+    assert after[m016.id].text == m016.text  # mục chỉ ở trang 2 không bị chunk lại
+    m015 = next(x for x in after.values() if x.item_code == "M015-2")
+    assert "1,300 points" in m015.text and m015.status == ChunkStatus.indexed
+    assert [x.seq for x in sorted(after.values(), key=lambda x: x.seq)] == list(range(1, len(after) + 1))
+    assert [x.item_code for x in sorted(after.values(), key=lambda x: x.seq)] == [
+        x.item_code for x in sorted(before, key=lambda x: x.seq)
+    ]
+    codes = [e.code for e in c.repo.recent_events(doc.id, limit=1000)]
+    assert "chunk.partial" in codes
+    assert c.config.overrides["search"].count() == len(after)

@@ -288,20 +288,41 @@ def _llm_confidence(llm, text: str) -> float | None:
 
 @register("chunk", "ai", max_attempts=2)
 def chunk_step(ctx: StepCtx) -> list[Next]:
+    """Cắt chunk. Job có `params.pages` (trang sách vừa sửa ở 検査) và chunk cũ đều có khoá mục → chỉ chunk lại các
+    mục dính tới trang đó, giữ nguyên chunk khác (kể cả chunk người đã sửa / gộp / tách). Còn lại: chunk lại toàn bộ."""
     c, doc, opts = ctx.c, ctx.doc, ctx.options.chunk
     pages = sorted(c.repo.list_pages(doc.id), key=lambda p: p.page)
     texts = [(p.book_page, pl.page_markdown(c, p), p.continues_next, p.table_continues_next) for p in pages]
     lines = rules.assemble_lines(texts)
     sections = rules.rough_sections(lines, opts)
+    keys = rules.section_keys(sections)
     ctx.emit("chunk.rough", sections=len(sections), lines=len(lines))
+
+    changed = {int(x) for x in (ctx.job.params.get("pages") or [])}
+    existing = c.repo.list_chunks(doc.id) if changed else []
+    plan = (
+        rules.partial_plan(
+            keys,
+            [{ln.page for ln in sec.lines} for sec in sections],
+            changed,
+            [(x.sections, x.page_from, x.page_to) for x in existing],
+        )
+        if existing
+        else None
+    )
+    redo, keep = (set(keys), []) if plan is None else (plan[0], [x for i, x in enumerate(existing) if i not in plan[1]])
+
     llm = None
     if opts.llm_refine or opts.llm_confidence:
         try:
             llm = ctx.adapter("llm")
         except NotConfigured:
             ctx.emit("chunk.llm_not_configured", "warn")
-    chunks: list[Chunk] = []
-    for sec in sections:
+    order = {k: i for i, k in enumerate(keys)}
+    items: list[tuple[tuple[int, int, int], Chunk]] = [((min(order[k] for k in x.sections), 0, x.seq), x) for x in keep]
+    for si, (sec, key) in enumerate(zip(sections, keys, strict=True)):
+        if key not in redo:
+            continue
         ctx.check_cancelled()
         if llm and opts.llm_refine and len(sec.lines) <= 400:
             spans, rounds, v = _llm_spans(ctx, llm, sec)
@@ -316,23 +337,23 @@ def chunk_step(ctx: StepCtx) -> list[Next]:
             viol = sorted(set(v.get(i, []) + section_level))
             rs = rules.rule_score(viol)
             ls = _llm_confidence(llm, text) if (llm and opts.llm_confidence) else None
-            chunks.append(
-                Chunk(
-                    id=f"c{len(chunks) + 1:05d}",
-                    doc_id=doc.id,
-                    seq=len(chunks) + 1,
-                    item_code=s.item_code,
-                    title=s.title,
-                    text=text,
-                    page_from=sec.lines[s.start].page,
-                    page_to=sec.lines[s.end].page,
-                    rule_score=rs,
-                    llm_score=ls,
-                    confidence=round(rs if ls is None else (rs + ls) / 2, 3),
-                    violations=viol,
-                    rounds=rounds,
-                )
+            ch = Chunk(
+                id="",
+                doc_id=doc.id,
+                seq=0,
+                item_code=s.item_code,
+                title=s.title,
+                text=text,
+                page_from=sec.lines[s.start].page,
+                page_to=sec.lines[s.end].page,
+                rule_score=rs,
+                llm_score=ls,
+                confidence=round(rs if ls is None else (rs + ls) / 2, 3),
+                violations=viol,
+                rounds=rounds,
+                sections=[key],
             )
+            items.append(((si, 1, i), ch))
         ctx.emit(
             "chunk.section",
             item_code=sec.item_code,
@@ -340,7 +361,18 @@ def chunk_step(ctx: StepCtx) -> list[Next]:
             rounds=rounds,
             violations=sum(len(x) for x in v.values()),
         )
+    items.sort(key=lambda t: t[0])
+    used = {x.id for x in keep}
+    nxt = max((int(i[1:]) for i in used if i[1:].isdigit()), default=0) + 1
+    chunks: list[Chunk] = []
+    for n, (_k, ch) in enumerate(items, start=1):
+        ch.seq = n
+        if not ch.id:
+            ch.id, nxt = f"c{nxt:05d}", nxt + 1
+        chunks.append(ch)
     c.repo.replace_chunks(doc.id, chunks)
+    if plan is not None:
+        ctx.emit("chunk.partial", sections=len(redo), kept=len(keep), pages=len(changed))
     ctx.emit("chunk.done", chunks=len(chunks), low_confidence=sum(1 for x in chunks if x.confidence < 0.7))
     pl.refresh_doc(c, doc.id, DocStatus.chunk_review)
     if doc.auto_review:

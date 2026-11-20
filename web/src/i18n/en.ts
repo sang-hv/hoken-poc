@@ -191,6 +191,7 @@ const en = {
     "auto.prepare_failed": "Quality check could not run — continuing",
     "auto.reindex": "Content changed — re-chunking and re-indexing",
     "chunk.llm_not_configured": "LLM not configured — rule-based chunking only",
+    "chunk.partial": "Re-chunked {{sections}} sections on {{pages}} edited page(s), kept {{kept}} chunks",
     "chunk.done": "{{chunks}} chunks created ({{low_confidence}} low confidence)",
     "chunk.invalidated": "OCR changed after chunking — chunks must be regenerated",
     "chunk.edited": "Chunk {{chunk}} edited by {{by}}",

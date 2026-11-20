@@ -587,3 +587,50 @@ def quality_grade(score: float, opts: Any) -> str:
     if score >= opts.grade_fair:
         return "fair"
     return "poor"
+
+
+# ================================================================== chunk lại một phần
+def section_keys(sections: list[Section]) -> list[str]:
+    """Khoá ổn định của mục: mã mục + thứ tự trong các mục cùng mã ("M017#0", "_#0" cho phần không mã)."""
+    seen: dict[str, int] = {}
+    out = []
+    for s in sections:
+        k = s.item_code or "_"
+        out.append(f"{k}#{seen.get(k, 0)}")
+        seen[k] = seen.get(k, 0) + 1
+    return out
+
+
+def partial_plan(
+    keys: list[str],
+    section_pages: list[set[int]],
+    changed: set[int],
+    chunks: list[tuple[list[str], int, int]],
+) -> tuple[set[str], set[int]] | None:
+    """Chunk lại một phần sau khi sửa các trang `changed` (trang sách).
+
+    keys / section_pages: các mục của văn bản MỚI và trang của từng mục. chunks: (khoá mục, page_from, page_to)
+    của chunk hiện có theo thứ tự. Trả (khoá mục cần chunk lại, chỉ số chunk bị bỏ) hoặc None = chunk lại toàn
+    bộ (có chunk cũ chưa có khoá). Bất biến: mọi chunk bị bỏ có mục được sinh lại (trừ mục đã biến mất) và mọi mục
+    sinh lại thì chunk cũ của nó bị bỏ — không mất, không trùng nội dung. Hàm thuần.
+    """
+    if any(not secs for secs, _a, _b in chunks):
+        return None
+    new = set(keys)
+    aff = {k for k, pages in zip(keys, section_pages, strict=True) if pages & changed}
+    drop: set[int] = set()
+    for i, (secs, a, b) in enumerate(chunks):
+        if any(a <= p <= b for p in changed) or any(k not in new for k in secs):
+            drop.add(i)
+            aff |= set(secs) & new
+    grew = True
+    while grew:  # chunk gộp nhiều mục: bỏ một → bỏ cả nhóm và sinh lại mọi mục của nó
+        grew = False
+        for i, (secs, _a, _b) in enumerate(chunks):
+            if i not in drop and set(secs) & aff:
+                drop.add(i)
+                grew = True
+            if i in drop and not (set(secs) & new) <= aff:
+                aff |= set(secs) & new
+                grew = True
+    return aff, drop

@@ -192,6 +192,7 @@ const ja: Messages = {
     "auto.prepare_failed": "品質チェックを実行できませんでした（処理は続行）",
     "auto.reindex": "内容が変更されたため、再チャンク化・再インデックスします",
     "chunk.llm_not_configured": "LLM 未設定のためルールのみで分割",
+    "chunk.partial": "修正した {{pages}} ページに関わる {{sections}} 項目だけ再チャンク（{{kept}} チャンクは維持）",
     "chunk.done": "{{chunks}} チャンクを作成（低信頼度 {{low_confidence}}）",
     "chunk.invalidated": "チャンク化後に OCR が変更されました — 再チャンク化が必要です",
     "chunk.edited": "チャンク {{chunk}} を編集（{{by}}）",

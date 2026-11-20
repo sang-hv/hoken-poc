@@ -107,6 +107,7 @@ def merge_chunks(c: Container, doc_id: str, ids: list[str], actor: str) -> Chunk
     first.text = "\n\n".join(x.text for x in sel)
     first.page_from, first.page_to = min(x.page_from for x in sel), max(x.page_to for x in sel)
     first.item_code = first.item_code or next((x.item_code for x in sel if x.item_code), "")
+    first.sections = list(dict.fromkeys(k for x in sel for k in x.sections))  # hợp khoá mục (giữ thứ tự)
     first.llm_score, first.status, first.edited_by = None, ChunkStatus.draft, actor
     _recheck(first, c.config.pipeline()[1].chunk)
     c.repo.save_chunk(first)
@@ -140,6 +141,7 @@ def split_chunk(c: Container, doc_id: str, chunk_id: str, offset: int, actor: st
         page_from=ch.page_to,
         page_to=ch.page_to,
         edited_by=actor,
+        sections=list(ch.sections),
     )
     for x in chunks:
         if x.seq > ch.seq:

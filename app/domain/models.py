@@ -174,6 +174,9 @@ class Chunk(BaseModel):
     status: ChunkStatus = ChunkStatus.draft
     edited_by: str = ""
     updated_at: str = ""
+    # Khoá mục (section) sinh ra chunk, vd "M017#0" — để chunk lại riêng phần bị sửa, giữ chunk khác (kể cả sửa tay).
+    # Gộp chunk → hợp các khoá. Rỗng = chunk cũ trước khi có trường này → lần sau chunk lại toàn bộ.
+    sections: list[str] = Field(default_factory=list)
 
 
 # ------------------------------------------------------------------ job & live log

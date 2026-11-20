@@ -337,21 +337,28 @@ def _commit(c: Container, doc: Document, p: Page, state: dict, source: str, acto
 FLAGS = "doc_flags"  # cờ theo tài liệu (DocStore), vd reindex_pending
 
 
-def reindex_document(c: Container, doc_id: str, actor: str) -> None:
-    """Sau khi nội dung trang của tài liệu auto_review bị sửa: chunk + index lại. Tài liệu duyệt tay: không làm gì."""
+def reindex_document(c: Container, doc_id: str, actor: str, pages: list[int] | None = None) -> None:
+    """Sau khi nội dung trang của tài liệu auto_review bị sửa: chunk + index lại. Tài liệu duyệt tay: không làm gì.
+    `pages` (trang PDF vừa sửa): chỉ chunk lại các mục dính tới các trang đó, giữ chunk khác (kể cả sửa tay);
+    None = chunk lại toàn bộ."""
     doc = c.repo.get_doc(doc_id)
     if not doc or not doc.auto_review:
         return None
     if doc.status in (DocStatus.chunking, DocStatus.indexing):
-        # Đang chunk/index: không chặn người sửa — ghi cờ, job index xong sẽ chạy lại (run_pending_reindex)
-        c.repo.s.put(FLAGS, doc_id, "reindex_pending", {"id": "reindex_pending", "by": actor, "at": now_iso()})
+        # Đang chunk/index: không chặn người sửa — ghi cờ (gộp các trang), job index xong sẽ chạy lại
+        old = c.repo.s.get(FLAGS, doc_id, "reindex_pending")
+        full = pages is None or (old is not None and old.get("pages") is None)
+        merged = None if full else sorted(set(pages or []) | set((old or {}).get("pages") or []))
+        c.repo.s.put(
+            FLAGS, doc_id, "reindex_pending", {"id": "reindex_pending", "by": actor, "at": now_iso(), "pages": merged}
+        )
         return None
-    pages = c.repo.list_pages(doc_id)
-    if not pages or any(p.status not in READY for p in pages):
+    all_pages = c.repo.list_pages(doc_id)
+    if not all_pages or any(p.status not in READY for p in all_pages):
         return None  # còn trang chưa qua nối trang / lỗi — luồng tự động sẽ chạy tiếp hoặc cần Retry
     pl.auto_approve_pages(c, doc_id)
     emit(c, doc_id, "auto.reindex", by=actor)
-    pl.start_chunking(c, doc_id, actor)
+    pl.start_chunking(c, doc_id, actor, sorted({doc.book_page(n) for n in pages}) if pages else None)
     return None
 
 
@@ -361,15 +368,16 @@ def run_pending_reindex(c: Container, doc_id: str) -> None:
     if not flag:
         return None
     c.repo.s.delete(FLAGS, doc_id, "reindex_pending")
-    reindex_document(c, doc_id, flag.get("by") or AUTO)
+    reindex_document(c, doc_id, flag.get("by") or AUTO, flag.get("pages"))
     return None
 
 
-def _after_change(c: Container, doc: Document, actor: str) -> None:
-    """Nội dung trang đã đổi: tài liệu tự chạy (auto_review) → chunk + index lại; duyệt tay → chunk cũ hết hiệu lực."""
+def _after_change(c: Container, doc: Document, actor: str, pages: list[int]) -> None:
+    """Nội dung trang (PDF) `pages` đã đổi: tài liệu tự chạy (auto_review) → chunk lại phần liên quan + index lại;
+    duyệt tay → chunk cũ hết hiệu lực."""
     if doc.auto_review:
         try:
-            reindex_document(c, doc.id, actor)
+            reindex_document(c, doc.id, actor, pages)
         except pl.PipelineError as e:  # tài liệu đang bận → lần sửa sau sẽ index lại
             log.warning("inspect.reindex_skipped doc=%s code=%s", doc.id, e.code)
     else:
@@ -398,7 +406,7 @@ def edit_element(c: Container, doc_id: str, n: int, eid: str, text: str, actor: 
         },
     )
     c.repo.audit(actor, "element.edit", f"{doc_id}:{n}", element=eid, v=v)
-    _after_change(c, doc, actor)
+    _after_change(c, doc, actor, [n])
     return public(e)
 
 
@@ -424,7 +432,7 @@ def accept_element(c: Container, doc_id: str, n: int, eid: str, actor: str) -> d
     )
     c.repo.audit(actor, "element.accept", f"{doc_id}:{n}", element=eid, v=v)
     if v != md_before:
-        _after_change(c, doc, actor)
+        _after_change(c, doc, actor, [n])
     return public(e)
 
 
@@ -510,7 +518,7 @@ def reread_element(c: Container, doc_id: str, n: int, eid: str, prompt: str, act
         },
     )
     c.repo.audit(actor, "element.reread", f"{doc_id}:{n}", element=eid, v=v)
-    _after_change(c, doc, actor)
+    _after_change(c, doc, actor, [n])
     return public(e)
 
 
@@ -538,6 +546,7 @@ def fix_weak(
     for n, eid in targets:
         by_page.setdefault(n, []).append(eid)
     done = 0
+    touched: list[int] = []
     for n, eids in by_page.items():
         p = c.repo.get_page(doc_id, n)
         if not p or p.status not in READY:
@@ -568,9 +577,10 @@ def fix_weak(
                 {"at": at, "by": actor, "kind": "element_reread", "element_id": eid, "summary": f"{s} · v{v}"},
             )
         done += len(changed)
+        touched.append(n)
     c.repo.audit(actor, "document.fix_weak", doc_id, elements=done, custom_prompt=bool(prompt.strip()))
     if done:
-        _after_change(c, _doc(c, doc_id), actor)
+        _after_change(c, _doc(c, doc_id), actor, touched)
     return done
 
 

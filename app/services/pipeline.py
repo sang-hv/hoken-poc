@@ -332,12 +332,13 @@ def auto_start_index(c: Container, doc_id: str) -> Job | None:
 
 
 # ================================================================== chunk & index
-def start_chunking(c: Container, doc_id: str, actor: str) -> Job | None:
+def start_chunking(c: Container, doc_id: str, actor: str, book_pages: list[int] | None = None) -> Job | None:
+    """`book_pages`: chỉ các trang sách này vừa đổi nội dung → bước chunk chỉ chunk lại các mục liên quan."""
     doc = c.repo.get_doc(doc_id)
     pages = c.repo.list_pages(doc_id)
     if not pages or any(p.status != PageStatus.approved for p in pages):
         raise PipelineError("pages_not_approved")
-    job = enqueue(c, doc_id, "chunk", actor=actor)
+    job = enqueue(c, doc_id, "chunk", params={"pages": sorted(book_pages)} if book_pages else None, actor=actor)
     if job:
         refresh_doc(c, doc, DocStatus.chunking)
     return job
