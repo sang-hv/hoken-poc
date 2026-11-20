@@ -1,5 +1,5 @@
 /** Chi tiết tài liệu — パイプライン / 原本 / テキスト / インサイト / 検査. Route: /documents/:docId[?page=N&tab=…]
- *  Không có ?tab: tài liệu đã index xong mở 原本, còn đang chạy / lỗi / chờ duyệt thì mở パイプライン. */
+ *  Không có ?tab (vừa upload / bấm từ danh sách 文書): luôn mở パイプライン. */
 import { useQueryClient } from "@tanstack/react-query";
 import { FileQuestion, Loader2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -47,10 +47,7 @@ export default function DocumentViewerPage() {
   const total = info.data?.pages ?? 0;
 
   const tabParam = params.get("tab") as ViewerTab | null;
-  // Tab mặc định chốt một lần theo trạng thái lúc mở (không tự nhảy tab khi pipeline chạy xong).
-  const defaultTab = useRef<ViewerTab | null>(null);
-  if (defaultTab.current === null && info.data) defaultTab.current = info.data.status === "indexed" ? "original" : "pipeline";
-  const tab: ViewerTab = tabParam && VIEWER_TABS.includes(tabParam) ? tabParam : (defaultTab.current ?? "pipeline");
+  const tab: ViewerTab = tabParam && VIEWER_TABS.includes(tabParam) ? tabParam : "pipeline";
   const rawPage = Number(params.get("page") ?? "1");
   const page = Math.min(Math.max(1, Number.isFinite(rawPage) ? Math.floor(rawPage) : 1), Math.max(1, total));
 
