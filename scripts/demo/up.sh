@@ -2,6 +2,7 @@
 # Chạy khu A để test UI với dữ liệu GIẢ (dev, không Docker): mock AI + API + worker + Vite.
 #   ENV_FILE=path/to/env scripts/demo/up.sh          # mặc định .env
 #   SEED=1 scripts/demo/up.sh                         # seed dữ liệu giả (lần đầu)
+#   SEED=reset scripts/demo/up.sh                     # xoá tài liệu cũ rồi seed lại
 # Log ghi vào out/demo/logs/. Dừng: scripts/demo/down.sh
 # Chạy được trên Linux và macOS (macOS không có setsid → dùng nohup).
 set -euo pipefail
@@ -29,10 +30,10 @@ start() { # tên, lệnh...
 
 start mock-ai .venv/bin/python -m uvicorn scripts.demo.mock_ai:app --port 8100
 sleep 2
-if [[ "${SEED:-0}" == "1" ]]; then
+if [[ "${SEED:-0}" == "1" || "${SEED:-0}" == "reset" ]]; then
   [[ -f out/demo/akahon_sample_536-543.pdf ]] || NODE_PATH="$(npm root -g)" node scripts/demo/make_pdfs.js out/demo
   pkill -f "app.main worker" 2>/dev/null || true
-  .venv/bin/python -m scripts.demo.seed
+  .venv/bin/python -m scripts.demo.seed $([[ "${SEED}" == "reset" ]] && echo --reset)
 fi
 start api .venv/bin/python -m app.main serve --port 8000
 start worker .venv/bin/python -m app.main worker --queues docling,ai,light

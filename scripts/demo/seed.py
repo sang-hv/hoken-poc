@@ -3,7 +3,13 @@
 Kết quả:
   - 3 người dùng: admin / reviewer / viewer @example.com, mật khẩu `password-1234`
   - Dịch vụ AI trỏ vào mock server (http://localhost:8100): LLM, embedding (local), CU (azure), search pgvector
-  - 4 tài liệu ở các trạng thái: đã index · đang review chunk · đang review OCR · lỗi CU
+  - 5 tài liệu theo các chế độ review.mode:
+      auto   — tự chạy hết tới index, chỉ gắn ⚠ (chat được ngay)
+      warn   — dừng ở OCR レビュー vì có cảnh báo (đã duyệt tay 1 trang) → popup レビュー / すべて承認 (緑本)
+      warn   — đã すべて承認 trang, dừng ở チャンクレビュー vì có chunk vi phạm luật (赤本 P536–543)
+      manual — luôn duyệt tay, đang ở OCR レビュー (2 trang đã duyệt)
+      manual — lỗi CU (job failed, có Retry)
+  `--reset`: xoá hết tài liệu cũ trước khi seed (người dùng / cấu hình giữ nguyên).
 
 Docling không có trong môi trường dev này nên điểm Docling được GIẢ LẬP (`fake_docling`) để màn định tuyến,
 khung layout và lý do định tuyến có dữ liệu. Dừng worker nền trước khi chạy để seed tự xử lý job.
@@ -11,7 +17,7 @@ khung layout và lý do định tuyến có dữ liệu. Dừng worker nền tr�
 Chạy:
   NODE_PATH=$(npm root -g) node scripts/demo/make_pdfs.js out/demo
   .venv/bin/python -m uvicorn scripts.demo.mock_ai:app --port 8100 &
-  .venv/bin/python -m scripts.demo.seed
+  .venv/bin/python -m scripts.demo.seed [--reset]
 """
 
 from __future__ import annotations
@@ -23,7 +29,6 @@ from pathlib import Path
 import app.steps.handlers as handlers
 from app.core.util import hash_password, new_id, now_iso
 from app.domain.models import PageFeatures, PageScores, Role, User
-from app.services import chunks as chunk_svc
 from app.services import jobs
 from app.services import pipeline as pl
 from app.services.container import get_container
@@ -174,7 +179,7 @@ def drain(c):
     jobs.run_worker(c, ["docling", "light", "ai"], drain=True, idle_exit_s=3, poll_s=0.2)
 
 
-def upload(c, file: str, name: str, kind: str, book_page: int, actor: str):
+def upload(c, file: str, name: str, kind: str, book_page: int, actor: str, mode: str):
     data = (PDF_DIR / file).read_bytes()
     doc = pl.create_document(
         c,
@@ -186,6 +191,7 @@ def upload(c, file: str, name: str, kind: str, book_page: int, actor: str):
         page_from=None,
         page_to=None,
         actor=actor,
+        review_mode=mode,
     )
     drain(c)
     return c.repo.get_doc(doc.id)
@@ -234,35 +240,45 @@ def main() -> int:
 
     handlers.analyze_page = fake_docling  # Docling giả lập (xem docstring)
 
-    print("1/4 Tài liệu đã index …")
-    d = upload(c, "akahon_sample_536-538_short.pdf", "赤本 サンプル P536–538（索引済み）", "akahon", 536, reviewer)
-    for p in c.repo.list_pages(d.id):
-        pl.submit_page(c, d.id, p.page, reviewer)
-    pl.start_chunking(c, d.id, reviewer)
-    drain(c)
-    chunk_svc.approve_chunks(c, d.id, [x.id for x in c.repo.list_chunks(d.id)], True, reviewer)
-    pl.start_index(c, d.id, reviewer)
-    drain(c)
+    if "--reset" in sys.argv:
+        for doc in c.repo.list_docs():
+            pl.delete_document(c, doc.id, admin)
+        print("Đã xoá tài liệu cũ.")
 
-    print("2/4 Tài liệu đang review chunk …")
-    d = upload(c, "midorihon_sample_372-375.pdf", "緑本 サンプル P372–375", "midorihon", 372, reviewer)
-    for p in c.repo.list_pages(d.id):
-        pl.submit_page(c, d.id, p.page, reviewer)
-    pl.start_chunking(c, d.id, reviewer)
-    drain(c)
-    ch = c.repo.list_chunks(d.id)
-    chunk_svc.approve_chunks(c, d.id, [x.id for x in ch[:2]], True, reviewer)
+    print("1/5 auto — tự chạy hết tới index …")
+    upload(c, "akahon_sample_536-538_short.pdf", "赤本 P536–538（自動実行・索引済み）", "akahon", 536, reviewer, "auto")
 
-    print("3/4 Tài liệu đang review OCR …")
-    d = upload(c, "akahon_sample_536-543.pdf", "赤本 サンプル P536–543", "akahon", 536, reviewer)
-    p1 = c.repo.get_page(d.id, 1)
-    pl.edit_page(c, d.id, 1, pl.page_markdown(c, p1).replace("1,200点", "1,200点（確認済み）"), reviewer, "fix")
-    for n in (1, 2, 3):
+    print("2/5 warn — dừng ở OCR レビュー …")
+    d = upload(
+        c,
+        "midorihon_sample_372-375.pdf",
+        "緑本 P372–375（警告で停止・OCR レビュー）",
+        "midorihon",
+        372,
+        reviewer,
+        "warn",
+    )
+    if d.review_hold == "ocr":
+        pl.submit_page(c, d.id, 1, reviewer)  # đã duyệt tay 1 trang ở 検査
+    else:
+        print("  ! không dừng ở OCR (không có điểm yếu)")
+
+    print("3/5 warn — すべて承認 trang, dừng ở チャンクレビュー …")
+    d = upload(
+        c, "akahon_sample_536-543.pdf", "赤本 P536–543（警告で停止・チャンクレビュー）", "akahon", 536, reviewer, "warn"
+    )
+    if d.review_hold == "ocr":
+        pl.approve_all_pages(c, d.id, reviewer)
+        drain(c)
+    if c.repo.get_doc(d.id).review_hold != "chunk":
+        print("  ! không dừng ở チャンクレビュー (không có chunk cần xem)")
+
+    print("4/5 manual — đang ở OCR レビュー …")
+    d = upload(c, "akahon_sample_536-538_short.pdf", "赤本 P536–538（手動承認）", "akahon", 536, reviewer, "manual")
+    for n in (1, 2):
         pl.submit_page(c, d.id, n, reviewer)
-    pl.rerun_page_llm(c, d.id, 4, "表の2列目を確認してください", reviewer)
-    drain(c)
 
-    print("4/4 Tài liệu lỗi CU …")
+    print("5/5 manual — lỗi CU …")
     original = jobs.STEPS["cu"]
 
     def cu_fails(ctx):
@@ -270,7 +286,7 @@ def main() -> int:
 
     jobs.STEPS["cu"] = jobs.StepDef("ai", cu_fails, 1)
     try:
-        d = upload(c, "akahon_sample_failed.pdf", "赤本 サンプル P600–601（CU エラー）", "akahon", 600, reviewer)
+        d = upload(c, "akahon_sample_failed.pdf", "赤本 P600–601（CU エラー）", "akahon", 600, reviewer, "manual")
         for p in c.repo.list_pages(d.id):
             pl.set_route_override(c, d.id, p.page, "force_cu", reviewer)
         drain(c)
@@ -278,7 +294,7 @@ def main() -> int:
         jobs.STEPS["cu"] = original
 
     for doc in c.repo.list_docs():
-        print(f"  {doc.status.value:<14} {doc.name}")
+        print(f"  {doc.status.value:<14} {pl.review_mode(doc):<7} hold={doc.review_hold or '-':<6} {doc.name}")
     print(f"\nĐăng nhập: admin@example.com / reviewer@example.com / viewer@example.com — mật khẩu {PASSWORD}")
     return 0
 
