@@ -129,7 +129,10 @@ export default function DocumentViewerPage() {
             title={t("viewer.state.notFound")}
             hint={t("viewer.state.notFoundHint")}
             action={
-              <Link to={`/notebooks/${nbId}`} className={buttonVariants({ variant: "outline", size: "sm" })}>
+              <Link
+                to={nbId ? `/notebooks/${nbId}` : `/documents/${docId}`}
+                className={buttonVariants({ variant: "outline", size: "sm" })}
+              >
                 {t("viewer.top.back")}
               </Link>
             }

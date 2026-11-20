@@ -140,7 +140,7 @@ def to_pdf(data: bytes) -> tuple[bytes, str]:
 
 def add_source(c: Container, nb: dict, *, data: bytes, filename: str, name: str, actor: str) -> dict:
     pdf, file_type = to_pdf(data)
-    opts = c.config.pipeline()[1].notebook
+    opts = c.config.pipeline()[1].review
     doc = pl.create_document(
         c,
         data=pdf,

@@ -1,5 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  AlertTriangle,
   Check,
   ChevronRight,
   ExternalLink,
@@ -10,6 +11,7 @@ import {
   Loader2,
   RefreshCw,
   Route,
+  ScanSearch,
   ScanText,
   Sparkles,
   UserCheck,
@@ -41,6 +43,7 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useEventStream } from "@/lib/sse";
 import type { Doc, DocStatus, Job, JobEvent, Page } from "@/lib/types";
+import type { DocQuality } from "@/lib/v2types";
 import { cn, fmtDuration, fmtRelative } from "@/lib/utils";
 
 const ORDER: DocStatus[] = [
@@ -397,6 +400,13 @@ export default function DocumentDetailPage() {
   );
   const { events, connected } = useEventStream(`/api/stream/documents/${docId}`, onEvent);
   const steps = useSteps(doc.data, pages.data);
+  // Chất lượng sau pipeline + số cảnh báo chưa xử lý (chỉ có khi đã qua bước nối trang)
+  const quality = useQuery({
+    queryKey: ["inspect", docId, "quality"],
+    queryFn: () => api.get<DocQuality>(`/documents/${docId}/quality`),
+    enabled: !!doc.data && !["processing", "stitching"].includes(doc.data.status),
+    retry: false,
+  });
 
   const action = async (name: string) => {
     try {
@@ -420,6 +430,8 @@ export default function DocumentDetailPage() {
   const total = d.page_to - d.page_from + 1;
   const nextReview = pages.data?.find((p) => p.status === "review");
   const failed = d.stats.failed ?? 0;
+  const q = quality.data;
+  const inspectUrl = `/documents/${docId}/view?tab=inspect`;
 
   return (
     <>
@@ -453,6 +465,10 @@ export default function DocumentDetailPage() {
         subtitle={`${t("documents.bookPages", { from: d.book_page_start, to: d.book_page_start + total - 1 })} · PDF p${d.page_from}–${d.page_to} / ${d.total_pdf_pages} · ${t("jobs.configVersion", { v: d.config_version })}`}
         actions={
           <>
+            <Button variant="outline" size="sm" onClick={() => nav(inspectUrl)}>
+              <ScanSearch />
+              {t("detail.inspect")}
+            </Button>
             <Button variant="outline" size="sm" onClick={() => window.open(`/api/documents/${docId}/source`, "_blank")}>
               <ExternalLink />
               {t("detail.openSource")}
@@ -501,6 +517,19 @@ export default function DocumentDetailPage() {
                 <Badge tone="warning">{t("detail.cuSkipped", { n: d.stats.cu_skipped })}</Badge>
               )}
               {failed > 0 && <Badge tone="danger">{t("pageStatus.failed")}: {failed}</Badge>}
+              {q && (
+                <Badge tone={q.grade === "good" ? "success" : q.grade === "fair" ? "warning" : "danger"}>
+                  {t(`viewer.grade.${q.grade}`)} · {q.score}
+                </Badge>
+              )}
+              {q && q.weak_open > 0 && (
+                <Link to={inspectUrl}>
+                  <Badge tone="warning">
+                    <AlertTriangle />
+                    {t("detail.weakOpen", { n: q.weak_open })}
+                  </Badge>
+                </Link>
+              )}
             </div>
           </div>
           <Stepper steps={steps} />

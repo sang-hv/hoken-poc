@@ -89,3 +89,12 @@ def container():
 @pytest.fixture
 def sample_pdf() -> bytes:
     return make_pdf(SAMPLE_PAGES)
+
+
+def manual_review(container) -> None:
+    """Tắt tự chạy (review.auto_review) cho test luồng duyệt tay từng trang / chunk."""
+    from app.domain.options import PipelineOptions
+
+    opts = PipelineOptions()
+    opts.review.auto_review = False
+    container.repo.put_setting("pipeline", {"version": 1, "options": opts.model_dump(mode="json")})

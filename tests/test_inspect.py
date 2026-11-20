@@ -16,6 +16,7 @@ from app.services.jobs import run_worker
 from app.steps import elements as E
 from app.steps import rules
 from app.steps.common import k_page
+from tests.conftest import manual_review
 
 H = {"X-Requested-With": "hoken"}
 Q = QualityOptions()
@@ -265,6 +266,7 @@ def _admin(client):
 
 
 def _upload(client, container, pdf) -> str:
+    manual_review(container)  # các test này kiểm tra tài liệu duyệt tay; luồng tự chạy có test riêng
     r = client.post("/api/documents", files={"file": ("s.pdf", pdf, "application/pdf")}, data={"name": "S"}, headers=H)
     assert r.status_code == 200, r.text
     run_worker(container, ["docling", "light", "ai"], drain=True, idle_exit_s=0, poll_s=0)

@@ -49,13 +49,13 @@ export function TopBar({
     <header className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 border-b border-border bg-card px-3 py-2 lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
       <div className="flex min-w-0 items-center gap-1 lg:col-start-1 lg:row-start-1">
         <Link
-          to={`/notebooks/${nbId}`}
+          to={nbId ? `/notebooks/${nbId}` : `/documents/${docId}`}
           aria-label={t("viewer.top.back")}
           title={t("viewer.top.back")}
           className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "min-w-0 shrink-0 gap-1 px-2 text-muted-foreground")}
         >
           <ChevronLeft />
-          <span className="hidden max-w-44 truncate sm:inline">{nb.data?.name ?? t("viewer.top.notebook")}</span>
+          <span className="hidden max-w-44 truncate sm:inline">{nbId ? (nb.data?.name ?? t("viewer.top.notebook")) : t("nav.documents")}</span>
         </Link>
         <span className="mx-1 hidden h-5 w-px bg-border sm:block" aria-hidden />
         <Icon className="size-4 shrink-0 text-danger" aria-hidden />

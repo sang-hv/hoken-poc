@@ -53,6 +53,9 @@ class CuOptions(BaseModel):
 
 
 class ReviewOptions(BaseModel):
+    # Pipeline tự chạy hết (OCR → chunk → index), tự duyệt trang/chunk với người duyệt "auto"; chỗ kém chỉ hiện
+    # cảnh báo ⚠ để người sửa / xác nhận. Tắt → quay lại duyệt tay từng trang và chunk.
+    auto_review: bool = True
     # Vùng (chữ CU / phần tử Docling) có confidence dưới ngưỡng được viền đỏ trên ảnh trang.
     # Chỉ để tô màu — trang nào cũng vẫn phải review.
     low_confidence: float = 0.8
@@ -111,7 +114,6 @@ class QualityOptions(BaseModel):
 class NotebookOptions(BaseModel):
     """Sổ tay demo (UI v2): pipeline tự chạy hết + chat Agentic RAG. Chủ: backend A1."""
 
-    auto_review: bool = True  # tài liệu tải lên từ sổ tay: tự duyệt trang/chunk (người duyệt "auto")
     agent_steps: int = 3  # số lần tìm tối đa của agent (chế độ 標準)
     agent_steps_deep: int = 5  # chế độ じっくり回答
     top_k: int = 6

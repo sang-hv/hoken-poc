@@ -4,6 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.services.jobs import run_worker
+from tests.conftest import manual_review
 
 H = {"X-Requested-With": "hoken"}
 
@@ -89,6 +90,7 @@ def test_upload_review_flow_via_api(client, container, sample_pdf):
     import app.steps.handlers  # noqa: F401
 
     _setup_admin(client)
+    manual_review(container)  # luồng duyệt tay (review.auto_review = false)
     r = client.post(
         "/api/documents",
         files={"file": ("s.pdf", sample_pdf, "application/pdf")},
@@ -197,3 +199,18 @@ def test_page_low_confidence_and_raw_json(client, container, sample_pdf):
     assert "elements" in client.get(f"/api/documents/{doc_id}/pages/1/raw/docling").json()
     assert client.get(f"/api/documents/{doc_id}/pages/1/raw/secrets").status_code == 404
     assert client.get(f"/api/documents/{doc_id}/pages/2/raw/cu").status_code == 404
+
+
+def test_document_upload_runs_automatically_by_default(client, container, sample_pdf):
+    """Mặc định (review.auto_review = true): upload ở màn 文書 cũng tự chạy hết tới chunk, tự duyệt bởi "auto"."""
+    import app.steps.handlers  # noqa: F401
+
+    _setup_admin(client)
+    r = client.post("/api/documents", files={"file": ("s.pdf", sample_pdf, "application/pdf")}, headers=H)
+    doc_id = r.json()["id"]
+    assert r.json()["auto_review"] is True
+    run_worker(container, ["docling", "light", "ai"], drain=True, idle_exit_s=0, poll_s=0)
+    pages = client.get(f"/api/documents/{doc_id}/pages").json()
+    assert all(p["status"] == "approved" and p["reviewed_by"] == "auto" for p in pages)
+    chunks = client.get(f"/api/documents/{doc_id}/chunks").json()
+    assert chunks and all(ch["status"] != "draft" for ch in chunks)

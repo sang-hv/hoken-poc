@@ -70,6 +70,7 @@ function Routed() {
         <Route path="documents" element={<DocumentsPage />} />
         <Route path="documents/:docId" element={<DocumentDetailPage />} />
         <Route path="documents/:docId/review" element={<NextReviewRedirect />} />
+        <Route path="documents/:docId/view" element={<DocumentViewerPage />} />
         <Route path="documents/:docId/pages/:page" element={<PageReviewPage />} />
         <Route path="documents/:docId/chunks" element={<ChunkReviewPage />} />
         <Route path="jobs" element={<JobsPage />} />

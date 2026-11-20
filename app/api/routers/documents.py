@@ -57,6 +57,7 @@ async def upload(
         page_from=page_from,
         page_to=page_to,
         actor=user.email,
+        auto_review=c.config.pipeline()[1].review.auto_review,
     )
     return doc.model_dump(mode="json")
 

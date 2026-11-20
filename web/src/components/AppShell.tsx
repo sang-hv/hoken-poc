@@ -146,7 +146,7 @@ export function AppShell() {
   const sidebar = onNotebook
     ? { collapsed: !nbExpanded, toggle: () => setNbExpanded((v) => !v) }
     : stored;
-  const fullBleed = onNotebook || /\/documents\/[^/]+\/(pages|chunks)/.test(loc.pathname);
+  const fullBleed = onNotebook || /\/documents\/[^/]+\/(pages|chunks|view)/.test(loc.pathname);
 
   /** Menu dùng cho sidebar desktop (có thể thu gọn) và ngăn kéo trên mobile (luôn mở rộng). */
   const nav = (collapsed: boolean, collapsible: boolean) => (
