@@ -646,7 +646,12 @@ def align(els: list[dict], md: str) -> list[dict]:
 
     if els and units:
         first = next((a for a in assign if a is not None), None)
-        prev = first
+        if first is None:
+            # Không khối nào khớp chữ của phần tử (vd phần tử Docling chỉ có khung, không có chữ thô): chia các khối
+            # lần lượt cho phần tử theo thứ tự đọc — vẫn giữ khung thật thay vì vỡ (out[None])
+            n_el = len(els)
+            assign = [min(n_el - 1, ui * n_el // len(units)) for ui in range(len(units))]
+        prev = first if first is not None else assign[0]
         for ui in range(len(units)):
             if assign[ui] is None:
                 assign[ui] = prev

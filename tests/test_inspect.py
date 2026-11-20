@@ -486,3 +486,17 @@ def test_prepare_document_auto_rereads_low_elements(container, sample_pdf):
     q = svc.doc_quality(container, doc.id)
     assert q and q["weak_open"] == 1 and q["counts"] == {"reread": 1}
     assert svc.open_weak_pages(container, doc.id) == {1}
+
+
+def test_align_without_any_text_match_keeps_boxes():
+    """Phần tử Docling chỉ có khung, không có chữ thô (không khối nào khớp) → chia khối theo thứ tự, không vỡ."""
+    from app.steps import elements as E
+
+    els = [
+        {"label": "section_header", "bbox": [0.1, 0.1, 0.9, 0.15], "raw_text": ""},
+        {"label": "text", "bbox": [0.1, 0.2, 0.9, 0.4], "raw_text": ""},
+    ]
+    md = "## B000-4 歯科疾患管理料\n\n(1) 継続的な管理を行った場合に算定する。\n\n(2) 2月以内に1回に限る。\n"
+    out = E.align(els, md)
+    assert len(out) == 2 and all(e["text"] for e in out)
+    assert out[0]["text"].startswith("## B000-4") and "(2)" in out[1]["text"]
