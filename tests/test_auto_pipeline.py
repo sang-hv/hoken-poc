@@ -304,3 +304,38 @@ def test_chunk_coverage_and_regions(client, container, sample_pdf):
     assert [p["page"] for p in reg["pages"]] == list(range(m15.page_from, m15.page_to + 1))
     assert reg["pages"][0]["elements"] and all(e["coverage"] >= rules.COVER_PART for e in reg["pages"][0]["elements"])
     assert client.get(f"/api/documents/{doc_id}/chunks/nope/regions").status_code == 404
+
+
+def test_approve_all_goes_straight_to_next_step(client, container, sample_pdf):
+    """Duyệt tay: すべて承認 ở OCR レビュー → duyệt hết trang + chunk; ở チャンクレビュー → duyệt + index."""
+    from conftest import manual_review
+
+    c = container
+    _search_ready(c)
+    manual_review(c)
+    doc_id = client.post("/api/documents", files={"file": ("s.pdf", sample_pdf, "application/pdf")}, headers=H).json()[
+        "id"
+    ]
+    drain(c)
+    assert c.repo.get_doc(doc_id).status == DocStatus.ocr_review
+    # sai bước → 409
+    r = client.post(f"/api/documents/{doc_id}/actions/approve_all_chunks", headers=H)
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "doc_not_in_chunk_review"
+
+    r = client.post(f"/api/documents/{doc_id}/actions/approve_all_pages", headers=H)
+    assert r.status_code == 200, r.text
+    assert all(
+        p.status == PageStatus.approved and p.reviewed_by == "admin@example.com" for p in c.repo.list_pages(doc_id)
+    )
+    drain(c)
+    assert c.repo.get_doc(doc_id).status == DocStatus.chunk_review
+
+    r = client.post(f"/api/documents/{doc_id}/actions/approve_all_chunks", headers=H)
+    assert r.status_code == 200, r.text
+    drain(c)
+    assert c.repo.get_doc(doc_id).status == DocStatus.indexed
+    assert all(x.status == ChunkStatus.indexed for x in c.repo.list_chunks(doc_id))
+    codes = {e.code for e in c.repo.recent_events(doc_id, limit=1000)}
+    assert {"review.approved_all", "chunk.approved_all"} <= codes
+    acts = {a.action for a in c.repo.list_audit()}
+    assert {"review.approve_all", "chunk.approve_all"} <= acts

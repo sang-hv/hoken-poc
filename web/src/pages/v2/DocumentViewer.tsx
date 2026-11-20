@@ -10,6 +10,7 @@ import { ChunksTab } from "@/components/v2/viewer/ChunksTab";
 import { InsightsTab } from "@/components/v2/viewer/InsightsTab";
 import { InspectTab } from "@/components/v2/viewer/InspectTab";
 import { PipelineTab } from "@/components/v2/viewer/PipelineTab";
+import { ReviewGate, reviewStage } from "@/components/v2/viewer/ReviewGate";
 import { OriginalTab } from "@/components/v2/viewer/OriginalTab";
 import { TextTab } from "@/components/v2/viewer/TextTab";
 import { TopBar } from "@/components/v2/viewer/TopBar";
@@ -19,6 +20,7 @@ import {
   type ViewerTab,
   isTypingTarget,
   useDocInfo,
+  useDocMeta,
   vk,
 } from "@/components/v2/viewer/shared";
 import { ApiError } from "@/lib/api";
@@ -41,6 +43,7 @@ export default function DocumentViewerPage() {
   const [params, setParams] = useSearchParams();
 
   const info = useDocInfo(docId);
+  const meta = useDocMeta(docId);
   const total = info.data?.pages ?? 0;
 
   const tabParam = params.get("tab") as ViewerTab | null;
@@ -156,7 +159,13 @@ export default function DocumentViewerPage() {
     <div className="flex h-full min-h-[32rem] flex-col bg-background">
       <TopBar docId={docId} info={info.data} infoLoading={info.isLoading} tab={tab} onTab={onTab} page={page} />
 
-      {processing && tab !== "pipeline" && (
+      {/* Đang chờ review (duyệt tay): nhắc ở tab review tương ứng — 検査 cho OCR, チャンク cho chunk */}
+      {meta.data &&
+        ((tab === "inspect" && reviewStage(meta.data) === "ocr") ||
+          (tab === "chunks" && reviewStage(meta.data) === "chunk")) && (
+          <ReviewGate doc={meta.data} canEdit={canEdit} variant="strip" />
+        )}
+      {processing && tab !== "pipeline" && !reviewStage(meta.data) && (
         <div role="status" className="flex shrink-0 items-center gap-2 border-b border-border bg-info-soft px-4 py-1.5 text-xs text-info">
           <Loader2 className="size-3.5 animate-spin" aria-hidden />
           <span className="font-medium">{t("viewer.state.processing")}</span>

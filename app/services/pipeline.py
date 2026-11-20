@@ -306,6 +306,44 @@ def auto_approve_pages(c: Container, doc_id: str) -> int:
     return n
 
 
+def approve_all_pages(c: Container, doc_id: str, actor: str) -> Job | None:
+    """「すべて承認」 ở OCR レビュー (đã xác nhận): duyệt mọi trang còn chờ với người duyệt là người bấm, rồi chuyển
+    luôn sang chunk. Trang đang xử lý / lỗi thì không duyệt được."""
+    doc = c.repo.get_doc(doc_id)
+    if not doc or doc.status not in (DocStatus.ocr_review, DocStatus.ready_for_chunking):
+        raise PipelineError("doc_not_in_ocr_review")
+    pages = c.repo.list_pages(doc_id)
+    if any(p.status not in (PageStatus.review, PageStatus.approved) for p in pages):
+        raise PipelineError("pages_not_ready")
+    n = 0
+    for p in pages:
+        if p.status == PageStatus.review:
+            p.status, p.reviewed_by, p.reviewed_at = PageStatus.approved, actor, now_iso()
+            c.repo.save_page(p)
+            n += 1
+    emit(c, doc_id, "review.approved_all", count=n, by=actor)
+    c.repo.audit(actor, "review.approve_all", doc_id, pages=n)
+    refresh_doc(c, doc_id)
+    return start_chunking(c, doc_id, actor)
+
+
+def approve_all_chunks(c: Container, doc_id: str, actor: str) -> Job | None:
+    """「すべて承認」 ở チャンクレビュー (đã xác nhận): duyệt mọi chunk nháp (người bấm = người duyệt) rồi index."""
+    doc = c.repo.get_doc(doc_id)
+    if not doc or doc.status != DocStatus.chunk_review:
+        raise PipelineError("doc_not_in_chunk_review")
+    n = 0
+    for x in c.repo.list_chunks(doc_id):
+        if x.status == ChunkStatus.draft:
+            x.status, x.edited_by = ChunkStatus.approved, actor
+            c.repo.save_chunk(x)
+            n += 1
+    emit(c, doc_id, "chunk.approved_all", count=n, by=actor)
+    c.repo.audit(actor, "chunk.approve_all", doc_id, chunks=n)
+    refresh_doc(c, doc_id)
+    return start_index(c, doc_id, actor)
+
+
 def auto_approve_chunks(c: Container, doc_id: str) -> int:
     n = 0
     for x in c.repo.list_chunks(doc_id):

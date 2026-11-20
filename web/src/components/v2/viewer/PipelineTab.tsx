@@ -28,6 +28,7 @@ import type { Doc, DocStatus, JobEvent, Page } from "@/lib/types";
 import type { DocQuality } from "@/lib/v2types";
 import { cn } from "@/lib/utils";
 import { RenameDialog } from "@/pages/Documents";
+import { ReviewGate } from "./ReviewGate";
 import { type ViewerTab, vk } from "./shared";
 
 const ORDER: DocStatus[] = [
@@ -218,7 +219,6 @@ export function PipelineTab({
   const failed = d.stats.failed ?? 0;
   const q = quality.data;
   const editor = can("reviewer");
-  const manualReview = editor && !d.auto_review && d.status === "ocr_review";
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
@@ -257,28 +257,6 @@ export function PipelineTab({
                     {t("detail.restitch")}
                   </Button>
                 )}
-                {manualReview && (
-                  <Button size="sm" onClick={() => nav(`/documents/${docId}/review`)}>
-                    <UserCheck />
-                    {t("detail.reviewNext")}
-                  </Button>
-                )}
-                {editor && d.status === "ready_for_chunking" && (
-                  <Button size="sm" onClick={() => action("start_chunking")}>
-                    <Layers />
-                    {t("detail.startChunking")}
-                  </Button>
-                )}
-                {["chunk_review", "indexed", "indexing"].includes(d.status) && (
-                  <Button
-                    size="sm"
-                    variant={d.status === "chunk_review" ? "default" : "outline"}
-                    onClick={() => nav(`/documents/${docId}/chunks`)}
-                  >
-                    <ListChecks />
-                    {t("detail.reviewChunks")}
-                  </Button>
-                )}
               </div>
             </div>
 
@@ -309,12 +287,7 @@ export function PipelineTab({
 
             <Stepper steps={steps} />
 
-            {d.status === "ocr_review" && !d.auto_review && (
-              <p className="rounded-lg bg-warning-soft/60 px-3 py-2 text-sm">{t("detail.reviewHint")}</p>
-            )}
-            {d.status === "ready_for_chunking" && !d.auto_review && (
-              <p className="rounded-lg bg-primary-soft px-3 py-2 text-sm text-primary">{t("detail.allApprovedHint")}</p>
-            )}
+            <ReviewGate doc={d} canEdit={editor} variant="card" onTab={onTab} />
             {d.status === "indexed" && (
               <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-success-soft px-3 py-2 text-sm text-success">
                 <span className="flex items-center gap-2 font-medium">

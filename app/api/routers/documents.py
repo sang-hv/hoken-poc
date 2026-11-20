@@ -111,6 +111,10 @@ def action(doc_id: str, action: str, c: Container = Depends(container), user: Us
         job = pl.start_chunking(c, doc_id, user.email)
     elif action == "index":
         job = pl.start_index(c, doc_id, user.email)
+    elif action == "approve_all_pages":
+        job = pl.approve_all_pages(c, doc_id, user.email)
+    elif action == "approve_all_chunks":
+        job = pl.approve_all_chunks(c, doc_id, user.email)
     elif action == "restitch":
         job = enqueue(c, doc_id, "stitch", actor=user.email)
     elif action == "retry_failed":

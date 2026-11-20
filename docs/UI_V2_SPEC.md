@@ -75,3 +75,7 @@ GET  /api/documents/{doc}/pages/{n}/history        → HistoryItem[]
 ## Kiểu dữ liệu (TypeScript ở `web/src/lib/v2types.ts`, Python tự định nghĩa tương ứng)
 
 Xem `web/src/lib/v2types.ts` — đó là hợp đồng chung, backend trả đúng các field này (snake_case).
+
+- Tắt tự chạy (duyệt tay): tài liệu dừng ở OCR レビュー / チャンクレビュー → banner nhắc ở tab パイプライン và tab review
+  tương ứng (検査 / チャンク) với nút đi review và 「すべて承認」 (popup xác nhận → duyệt hết phần còn lại với người
+  duyệt là người bấm, ghi audit, chạy luôn bước sau: `actions/approve_all_pages` → chunk, `approve_all_chunks` → index).
