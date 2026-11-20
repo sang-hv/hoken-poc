@@ -123,10 +123,6 @@ function ReviewDialog({
             <Button variant="ghost" onClick={() => onOpenChange(false)}>
               {t("viewer.gate.later")}
             </Button>
-            <Button variant="outline" disabled={c.left <= 0} onClick={() => setStep("confirm")}>
-              <CheckCheck />
-              {t("viewer.gate.approveAllEllipsis")}
-            </Button>
             <Button
               onClick={() => {
                 onOpenChange(false);
@@ -135,6 +131,10 @@ function ReviewDialog({
             >
               {ocr ? <UserCheck /> : <ListChecks />}
               {ocr ? t("viewer.gate.reviewPages") : t("viewer.gate.reviewChunks")}
+            </Button>
+            <Button variant="outline" disabled={c.left <= 0} onClick={() => setStep("confirm")}>
+              <CheckCheck />
+              {t("viewer.gate.approveAll")}
             </Button>
           </>
         }
