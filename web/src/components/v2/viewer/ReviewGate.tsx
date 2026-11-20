@@ -1,6 +1,6 @@
 /** Bước review chờ người (review.mode warn khi có cảnh báo, hoặc manual):
- *  - `ReviewPrompt`: popup tự hiện khi tài liệu dừng ở OCR レビュー / チャンクレビュー — 「レビューする」 hoặc
- *    「すべて承認して次へ」 (duyệt hết phần còn lại, ghi audit, chạy luôn bước sau). Đóng = để sau (nhớ theo phiên).
+ *  - `ReviewPrompt`: popup ở tab パイプライン khi tài liệu dừng ở OCR レビュー / チャンクレビュー — 「レビューする」 hoặc
+ *    「すべて承認して次へ」 (duyệt hết phần còn lại, ghi audit, chạy luôn bước sau). 「あとで」 = đóng tới lần sau.
  *  - `ReviewGate`: banner ở tab パイプライン (card) và tab review tương ứng (strip: 検査 cho OCR, チャンク cho chunk). */
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, CheckCheck, Layers, ListChecks, UserCheck } from "lucide-react";
@@ -103,6 +103,7 @@ function ReviewDialog({
     <Dialog
       open={open}
       onOpenChange={onOpenChange}
+      className={onReview ? "max-w-xl" : undefined}
       title={
         onReview
           ? stage === "ocr"
@@ -167,47 +168,33 @@ function ReviewDialog({
   );
 }
 
-const promptKey = (doc: string, stage: string) => `hoken.reviewPrompt:${doc}:${stage}`;
-
-/** Popup tự hiện khi tài liệu dừng ở bước review (mỗi bước một lần mỗi phiên; đóng = để sau). */
+/** Popup tự hiện ở tab パイプライン khi tài liệu đang dừng ở bước review: lúc mở / tải lại màn, lúc chuyển từ trang
+ *  hoặc tab khác sang パイプライン, và lúc pipeline vừa dừng trong khi đang xem. 「あとで」 = đóng tới lần sau. */
 export function ReviewPrompt({
   doc,
   canEdit,
   onTab,
+  onPipeline,
 }: {
   doc: Doc | undefined;
   canEdit: boolean;
   onTab: (t: ViewerTab) => void;
+  /** đang ở tab パイプライン */
+  onPipeline: boolean;
 }) {
   const nav = useNavigate();
   const stage = reviewStage(doc);
   const [open, setOpen] = useState(false);
   useEffect(() => {
-    if (!doc || !stage || !canEdit) return setOpen(false);
-    let seen = false;
-    try {
-      seen = sessionStorage.getItem(promptKey(doc.id, stage)) === "1";
-    } catch {
-      /* bỏ qua */
-    }
-    if (!seen) setOpen(true);
-  }, [doc?.id, stage, canEdit]); // eslint-disable-line react-hooks/exhaustive-deps
+    setOpen(!!doc && !!stage && canEdit && onPipeline);
+  }, [doc?.id, stage, canEdit, onPipeline]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!doc || !stage) return null;
-  const close = (o: boolean) => {
-    setOpen(o);
-    if (!o)
-      try {
-        sessionStorage.setItem(promptKey(doc.id, stage), "1");
-      } catch {
-        /* bỏ qua */
-      }
-  };
   return (
     <ReviewDialog
       doc={doc}
       stage={stage}
       open={open}
-      onOpenChange={close}
+      onOpenChange={setOpen}
       onReview={() => (stage === "ocr" ? nav(`/documents/${doc.id}/review`) : onTab("chunks"))}
     />
   );

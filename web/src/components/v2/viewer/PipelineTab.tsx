@@ -255,12 +255,6 @@ export function PipelineTab({
                     {t("detail.retryFailed")}
                   </Button>
                 )}
-                {editor && ["ocr_review", "ready_for_chunking"].includes(d.status) && (
-                  <Button variant="outline" size="sm" onClick={() => action("restitch")}>
-                    <Layers />
-                    {t("detail.restitch")}
-                  </Button>
-                )}
               </div>
             </div>
 

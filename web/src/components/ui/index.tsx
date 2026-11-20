@@ -330,7 +330,9 @@ export function Dialog({
             </DialogPrimitive.Close>
           </div>
           <div className="overflow-y-auto px-6 py-5">{children}</div>
-          {footer && <div className="flex justify-end gap-2 border-t border-border px-6 py-3">{footer}</div>}
+          {footer && (
+            <div className="flex flex-wrap justify-end gap-2 border-t border-border px-6 py-3">{footer}</div>
+          )}
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>
     </DialogPrimitive.Root>

@@ -157,8 +157,8 @@ export default function DocumentViewerPage() {
     <div className="flex h-full min-h-[32rem] flex-col bg-background">
       <TopBar docId={docId} info={info.data} infoLoading={info.isLoading} tab={tab} onTab={onTab} />
 
-      {/* Dừng ở bước review (warn có cảnh báo / manual): popup hỏi review hay すべて承認 (mỗi bước một lần mỗi phiên) */}
-      <ReviewPrompt doc={meta.data} canEdit={canEdit} onTab={onTab} />
+      {/* Dừng ở bước review (warn có cảnh báo / manual): popup ở tab パイプライン hỏi review hay すべて承認 */}
+      <ReviewPrompt doc={meta.data} canEdit={canEdit} onTab={onTab} onPipeline={tab === "pipeline"} />
       {/* ...và banner ở tab review tương ứng — 検査 cho OCR, チャンク cho chunk */}
       {meta.data &&
         ((tab === "inspect" && reviewStage(meta.data) === "ocr") ||
