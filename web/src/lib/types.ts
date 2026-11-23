@@ -180,34 +180,37 @@ export interface JobEvent {
   ts: string;
 }
 
-export interface FieldSpec {
+/** Lỗi cấu hình lớp 2 (biến môi trường): mã + tên biến, không có giá trị. */
+export interface EnvError {
+  code: "type_missing" | "type_unsupported" | "required" | "not_number" | "invalid";
+  env: string;
+}
+
+export interface ProviderField {
   name: string;
+  env: string;
   kind: "text" | "secret" | "number" | "select" | "bool" | "textarea";
-  required: boolean;
-  default: unknown;
-  options: string[];
-  show_if: Record<string, unknown>;
+  /** Trường thường: giá trị đang dùng */
+  value?: unknown;
+  /** Trường thường: lấy giá trị mặc định (biến chưa đặt) */
+  default?: boolean;
+  /** Trường secret: đã đặt hay chưa */
+  set?: boolean;
 }
 
-export interface AdapterSpec {
-  component: string;
-  type: "local" | "azure" | "aws";
-  service: string;
-  fields: FieldSpec[];
+export interface ProviderStatus {
+  type_env: string;
+  type: string | null;
+  service?: string;
+  ok: boolean;
+  error?: EnvError;
+  fields: ProviderField[];
 }
 
-export interface ProviderState {
-  type: string;
-  config: Record<string, unknown>;
-  secrets_set: string[];
-}
-
+/** GET /settings/providers — lớp 2 đọc từ biến môi trường, chỉ xem. */
 export interface ProvidersResponse {
-  version: number;
-  updated_at: string;
-  updated_by: string;
-  components: Record<string, ProviderState>;
-  catalog: Record<string, AdapterSpec[]>;
+  app_env: string;
+  components: Record<string, ProviderStatus>;
 }
 
 export interface SearchHit {

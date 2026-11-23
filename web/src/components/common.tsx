@@ -108,46 +108,6 @@ export function Markdown({ text, className }: { text: string; className?: string
   );
 }
 
-export function StatCard({
-  label,
-  value,
-  icon,
-  tone = "primary",
-  hint,
-  onClick,
-}: {
-  label: React.ReactNode;
-  value: React.ReactNode;
-  icon: React.ReactNode;
-  tone?: "primary" | "warning" | "danger" | "info" | "success" | "violet";
-  hint?: React.ReactNode;
-  onClick?: () => void;
-}) {
-  const bg: Record<string, string> = {
-    primary: "bg-primary-soft text-primary",
-    warning: "bg-warning-soft text-warning",
-    danger: "bg-danger-soft text-danger",
-    info: "bg-info-soft text-info",
-    success: "bg-success-soft text-success",
-    violet: "bg-violet-soft text-violet",
-  };
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={!onClick}
-      className="group flex items-center gap-4 rounded-xl border border-border bg-card p-4 text-left shadow-card transition enabled:hover:-translate-y-0.5 enabled:hover:shadow-md disabled:cursor-default"
-    >
-      <div className={cn("rounded-xl p-2.5 [&_svg]:size-5", bg[tone])}>{icon}</div>
-      <div className="min-w-0">
-        <p className="text-xs font-medium text-muted-foreground">{label}</p>
-        <p className="text-2xl font-semibold tabular-nums">{value}</p>
-        {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
-      </div>
-    </button>
-  );
-}
-
 /** Thanh phân trang: "1–20 / 57" + nút trước/sau. Ẩn khi chỉ có một trang. */
 export function Pagination({
   page,

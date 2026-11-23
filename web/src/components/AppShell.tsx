@@ -125,6 +125,8 @@ function useSidebarCollapsed() {
 
 /** Màn chi tiết tài liệu / review: toàn màn hình, sidebar thu về dải icon cho đủ rộng. */
 const DETAIL_ROUTE = /^\/documents\/[^/]+(\/(pages|chunks)\/?.*)?$/;
+/** Màn công cụ chia ngăn (không padding, cao hết màn) nhưng giữ sidebar như các màn khác. */
+const WORKSPACE_ROUTE = /^\/test\/chat\/?$/;
 
 export function AppShell() {
   const { t, i18n } = useTranslation();
@@ -142,7 +144,7 @@ export function AppShell() {
     if (!onDetail) setDetailExpanded(false);
   }, [onDetail]);
   const sidebar = onDetail ? { collapsed: !detailExpanded, toggle: () => setDetailExpanded((v) => !v) } : stored;
-  const fullBleed = DETAIL_ROUTE.test(loc.pathname);
+  const fullBleed = DETAIL_ROUTE.test(loc.pathname) || WORKSPACE_ROUTE.test(loc.pathname);
 
   /** Menu dùng cho sidebar desktop (có thể thu gọn) và ngăn kéo trên mobile (luôn mở rộng). */
   const nav = (collapsed: boolean, collapsible: boolean) => (

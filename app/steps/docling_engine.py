@@ -1,7 +1,6 @@
-"""Chạy Docling cho một trang và rút ra: markdown, điểm confidence, đặc trưng bảng/hình, toạ độ phần tử.
+"""Parser Docling: chạy cho một trang và rút ra markdown, điểm confidence, đặc trưng bảng/hình, toạ độ phần tử.
 
-Docling chỉ có trong image worker-docling (nặng). Nơi khác không cài Docling thì dùng pdfium để
-trích text (engine="pdfium") — trang đó sẽ bị định tuyến sang CU với lý do `no_docling`.
+Chọn engine ở `app/steps/parser.py` (PARSER_TYPE). Docling chỉ có trong image worker parser (nặng).
 """
 
 from __future__ import annotations
@@ -10,30 +9,12 @@ import io
 import math
 import os
 import re
-from dataclasses import dataclass, field
 from functools import lru_cache
 
 from app.domain.models import PageFeatures, PageScores
 from app.domain.options import DoclingOptions
 from app.steps.common import page_text_pdfium
-
-
-@dataclass
-class PageAnalysis:
-    engine: str
-    markdown: str
-    scores: PageScores
-    features: PageFeatures
-    elements: list[dict] = field(default_factory=list)  # {label, bbox[x0,y0,x1,y1] top-left 0..1, removed, figure}
-
-
-def docling_available() -> bool:
-    try:
-        import docling  # noqa: F401
-
-        return True
-    except ImportError:
-        return False
+from app.steps.parser import PageAnalysis
 
 
 def _num(v) -> float | None:
@@ -226,19 +207,3 @@ def analyze_with_docling(pdf: bytes, page: int, opts: DoclingOptions) -> PageAna
     it = iter(placeholders)
     md = re.sub(r"<!-- image -->", lambda _m: next(it, ""), md)
     return PageAnalysis("docling", md.strip() + "\n", scores, feats, elements)
-
-
-def analyze_with_pdfium(pdf: bytes, page: int) -> PageAnalysis:
-    from app.steps.rules import join_wrapped_lines
-
-    text = page_text_pdfium(pdf, page)
-    lines = [ln.rstrip() for ln in text.replace("\r", "").split("\n")]
-    feats = PageFeatures(has_text_layer=len(text.strip()) > 20)
-    md = join_wrapped_lines("\n".join(lines))
-    return PageAnalysis("pdfium", md.strip() + "\n", PageScores(), feats, [])
-
-
-def analyze_page(pdf: bytes, page: int, opts: DoclingOptions) -> PageAnalysis:
-    if docling_available():
-        return analyze_with_docling(pdf, page, opts)
-    return analyze_with_pdfium(pdf, page)

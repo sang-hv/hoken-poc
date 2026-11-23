@@ -1,10 +1,12 @@
 /** Bước review chờ người (review.mode warn khi có cảnh báo, hoặc manual):
- *  - `ReviewPrompt`: popup ở tab パイプライン khi tài liệu dừng ở OCR レビュー / チャンクレビュー — 「レビューする」 hoặc
- *    「すべて承認して次へ」 (duyệt hết phần còn lại, ghi audit, chạy luôn bước sau). 「あとで」 = đóng tới lần sau.
- *  - `ReviewGate`: banner ở tab パイプライン (card) và tab review tương ứng (strip: 検査 cho OCR, チャンク cho chunk). */
+ *  - `ReviewGate`: dải một dòng dưới thanh trên (tab パイプライン + tab review tương ứng: 検査 cho OCR, チャンク cho
+ *    chunk) — đây là nơi chính báo trạng thái chờ review.
+ *  - `ReviewPrompt`: popup CHỈ khi pipeline vừa dừng ở bước review trong lúc người dùng đang xem (không bật mỗi lần
+ *    mở / tải lại màn — modal lúc tải trang chặn người dùng mà banner đã nói cùng nội dung).
+ *  「すべて承認」 luôn qua bước xác nhận (ghi audit, người duyệt = người bấm) rồi chạy luôn bước sau. */
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, CheckCheck, Layers, ListChecks, UserCheck } from "lucide-react";
-import { useEffect, useState } from "react";
+import { AlertTriangle, CheckCheck, ListChecks, UserCheck } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -13,7 +15,6 @@ import { Button, Checkbox, Dialog } from "@/components/ui";
 import { api } from "@/lib/api";
 import type { Doc } from "@/lib/types";
 import type { DocQuality } from "@/lib/v2types";
-import { cn } from "@/lib/utils";
 import { type ViewerTab, vk } from "./shared";
 
 export type ReviewMode = "auto" | "warn" | "manual";
@@ -126,6 +127,7 @@ function ReviewDialog({
               {t("viewer.gate.later")}
             </Button>
             <Button
+              data-autofocus
               onClick={() => {
                 onOpenChange(false);
                 onReview?.();
@@ -179,32 +181,29 @@ function ReviewDialog({
       }
     >
       <div className="space-y-3 text-sm leading-relaxed">
-        <div className="flex gap-3 rounded-lg border border-danger/40 bg-danger-soft p-3">
-          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-danger" aria-hidden />
-          <div className="space-y-1.5">
-            <p className="font-semibold text-danger">
-              {ocr ? t("viewer.gate.approveAllOcrBody", { n: c.left }) : t("viewer.gate.approveAllChunkBody", { n: c.left })}
-            </p>
-            {warnings !== undefined && warnings > 0 && (
-              <p className="font-medium">
-                {ocr ? t("viewer.gate.warnOcr", { n: warnings }) : t("viewer.gate.warnChunk", { n: warnings })}
-              </p>
-            )}
-            <p className="text-muted-foreground">{ocr ? t("viewer.gate.approveAllOcrRisk") : t("viewer.gate.approveAllChunkRisk")}</p>
-            <p className="text-xs text-muted-foreground">{t("viewer.gate.recorded")}</p>
-          </div>
-        </div>
-        <label className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-border px-3 py-2.5">
-          <Checkbox checked={ack} onCheckedChange={(v) => setAck(v === true)} className="mt-0.5" />
-          <span className="font-medium">{ocr ? t("viewer.gate.ackOcr") : t("viewer.gate.ackChunk")}</span>
+        <p className="font-medium">
+          {ocr ? t("viewer.gate.approveAllOcrBody", { n: c.left }) : t("viewer.gate.approveAllChunkBody", { n: c.left })}
+        </p>
+        {warnings !== undefined && warnings > 0 && (
+          <p className="flex items-start gap-2 text-danger">
+            <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
+            {ocr ? t("viewer.gate.warnOcr", { n: warnings }) : t("viewer.gate.warnChunk", { n: warnings })}
+          </p>
+        )}
+        <p className="text-muted-foreground">
+          {ocr ? t("viewer.gate.approveAllOcrRisk") : t("viewer.gate.approveAllChunkRisk")} {t("viewer.gate.recorded")}
+        </p>
+        <label className="flex cursor-pointer items-start gap-2.5 border-t border-border pt-3">
+          <Checkbox data-autofocus checked={ack} onCheckedChange={(v) => setAck(v === true)} className="mt-0.5" />
+          <span>{ocr ? t("viewer.gate.ackOcr") : t("viewer.gate.ackChunk")}</span>
         </label>
       </div>
     </Dialog>
   );
 }
 
-/** Popup tự hiện ở tab パイプライン khi tài liệu đang dừng ở bước review: lúc mở / tải lại màn, lúc chuyển từ trang
- *  hoặc tab khác sang パイプライン, và lúc pipeline vừa dừng trong khi đang xem. 「あとで」 = đóng tới lần sau. */
+/** Popup khi pipeline vừa dừng ở bước review trong lúc đang xem tab パイプライン (trạng thái đổi từ "không chờ" sang
+ *  "chờ" trong phiên này). Mở / tải lại màn khi tài liệu đã đang chờ → không popup, banner ReviewGate đã đủ. */
 export function ReviewPrompt({
   doc,
   canEdit,
@@ -222,9 +221,19 @@ export function ReviewPrompt({
   const [open, setOpen] = useState(false);
   // Đã duyệt hết (chỉ còn bấm bước sau — banner có nút) → không cần popup
   const pending = !!doc && !!stage && counts(doc, stage).left > 0;
+  // Bước chờ ở lần render trước; `undefined` = chưa tải tài liệu (lần tải đầu không tính là "vừa dừng")
+  const prev = useRef<ReviewStage | undefined>(undefined);
   useEffect(() => {
-    setOpen(pending && canEdit && onPipeline);
-  }, [doc?.id, stage, pending, canEdit, onPipeline]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!doc) return;
+    const before = prev.current;
+    prev.current = stage;
+    if (before !== undefined && before !== stage && stage && pending && canEdit && onPipeline) setOpen(true);
+    if (!stage) setOpen(false);
+  }, [doc, stage, pending, canEdit, onPipeline]);
+  // Đổi tài liệu → coi như tải lần đầu
+  useEffect(() => {
+    prev.current = undefined;
+  }, [doc?.id]);
   if (!doc || !stage) return null;
   return (
     <ReviewDialog
@@ -240,12 +249,10 @@ export function ReviewPrompt({
 export function ReviewGate({
   doc,
   canEdit,
-  variant,
   onTab,
 }: {
   doc: Doc;
   canEdit: boolean;
-  variant: "card" | "strip";
   /** có → nút review của bước chunk mở tab チャンク (không truyền khi đang ở tab đó) */
   onTab?: (t: ViewerTab) => void;
 }) {
@@ -269,58 +276,46 @@ export function ReviewGate({
     <>
       <div
         role="status"
-        className={cn(
-          "flex flex-wrap items-center gap-x-3 gap-y-2 text-sm",
-          variant === "card"
-            ? "rounded-lg border border-warning/40 bg-warning-soft/70 px-3 py-2.5"
-            : "shrink-0 border-b border-warning/30 bg-warning-soft px-4 py-2",
-        )}
+        className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-warning/30 bg-warning-soft px-4 py-1.5 text-sm"
       >
-        {stage === "ocr" ? (
-          <UserCheck className="size-4 shrink-0 text-warning" aria-hidden />
-        ) : (
-          <ListChecks className="size-4 shrink-0 text-warning" aria-hidden />
-        )}
+        <span className="size-1.5 shrink-0 rounded-full bg-warning" aria-hidden />
         <p className="min-w-0 flex-1 leading-relaxed">
-          <span className="font-semibold">{title}</span>
+          <span className="font-medium">{title}</span>
           <span className="ml-2 text-muted-foreground">
             {held && <>{t("viewer.gate.heldShort")} · </>}
-            {progress} · {allDone ? t("viewer.gate.allDone") : t("viewer.gate.hint")}
+            {progress}
+            {allDone && <> · {t("viewer.gate.allDone")}</>}
           </span>
         </p>
         {canEdit && (
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-1.5">
+            {!allDone && (
+              <Button variant="ghost" size="sm" className="h-7" onClick={() => setConfirm(true)}>
+                {t("viewer.gate.approveAll")}
+              </Button>
+            )}
             {stage === "ocr" &&
               (allDone ? (
                 <Button
                   size="sm"
+                  className="h-7"
                   loading={busy === "start_chunking"}
                   onClick={() => act("start_chunking", t("viewer.gate.startedChunking"))}
                 >
-                  <Layers />
                   {t("detail.startChunking")}
                 </Button>
               ) : (
-                <Button size="sm" onClick={() => nav(`/documents/${doc.id}/review`)}>
-                  <UserCheck />
+                <Button size="sm" className="h-7" onClick={() => nav(`/documents/${doc.id}/review`)}>
                   {t("viewer.gate.reviewPages")}
                 </Button>
               ))}
-            {stage === "chunk" && onTab && (
-              <Button size="sm" onClick={() => onTab("chunks")}>
-                <ListChecks />
+            {stage === "chunk" && onTab && !allDone && (
+              <Button size="sm" className="h-7" onClick={() => onTab("chunks")}>
                 {t("viewer.gate.reviewChunks")}
               </Button>
             )}
-            {!allDone && (
-              <Button variant="outline" size="sm" onClick={() => setConfirm(true)}>
-                <CheckCheck />
-                {t("viewer.gate.approveAll")}
-              </Button>
-            )}
             {stage === "chunk" && allDone && (
-              <Button size="sm" loading={busy === "index"} onClick={() => act("index", t("viewer.gate.startedIndex"))}>
-                <Layers />
+              <Button size="sm" className="h-7" loading={busy === "index"} onClick={() => act("index", t("viewer.gate.startedIndex"))}>
                 {t("detail.startIndex")}
               </Button>
             )}

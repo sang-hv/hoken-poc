@@ -156,3 +156,22 @@ export interface ChunkListPage {
   items: ChunkSummary[];
   focus_index: number | null;
 }
+
+/** GET /documents/{id}/recognition — tổng kết nhận diện (docs/STATUS.md §C). */
+export type RecognitionBucket = "good" | "fixed" | "weak" | "unread";
+export interface RecognitionCounts {
+  elements: number;
+  current: Record<RecognitionBucket, number>;
+  initial: Record<"good" | "weak" | "unread", number>;
+}
+export interface RecognitionSummary extends RecognitionCounts {
+  doc_id: string;
+  name: string;
+  status: string;
+  unit: "element";
+  estimated: number;
+  pages: (RecognitionCounts & { page: number; book_page: number })[];
+  pages_total: number;
+  pages_failed: number[];
+  pages_pending: number[];
+}

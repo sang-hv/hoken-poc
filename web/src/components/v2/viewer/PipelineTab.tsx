@@ -1,19 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  AlertTriangle,
-  Check,
-  FileText,
-  Layers,
-  ListChecks,
-  Loader2,
-  MessagesSquare,
-  Pencil,
-  RefreshCw,
-  Route,
-  ScanText,
-  Sparkles,
-  UserCheck,
-} from "lucide-react";
+import { Check, ChevronRight, Circle, Loader2, MessagesSquare, Pencil, RefreshCw, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Navigate, useNavigate, useParams } from "react-router-dom";
@@ -21,15 +7,17 @@ import { toast } from "sonner";
 import { useToastError } from "@/components/common";
 import { LiveLog } from "@/components/LiveLog";
 import { DocStatusBadge } from "@/components/status";
-import { Badge, Button, Card, CardContent, Skeleton } from "@/components/ui";
+import { Button, Skeleton } from "@/components/ui";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import type { Doc, DocStatus, JobEvent, Page } from "@/lib/types";
 import type { DocQuality } from "@/lib/v2types";
 import { cn } from "@/lib/utils";
 import { RenameDialog } from "@/pages/Documents";
-import { ReviewGate, reviewMode, reviewStage } from "./ReviewGate";
-import { type ViewerTab, vk } from "./shared";
+import { reviewMode, reviewStage } from "./ReviewGate";
+import { Pane, PaneHeader, PaneRow } from "./pane";
+import { RecognitionPanes } from "./RecognitionPanel";
+import { GradeChip, type ViewerTab, vk } from "./shared";
 
 const ORDER: DocStatus[] = [
   "processing",
@@ -61,51 +49,56 @@ function useSteps(doc: Doc | undefined) {
     const stage = reviewStage(doc);
     const auto = reviewMode(doc) === "auto";
     const autoMeta = (m?: string) => (auto ? "auto" : m);
-    return [
-      { key: "docling", icon: <ScanText />, state: s(pre === 0, true), meta: `${doclingDone}/${total}` },
-      { key: "route", icon: <Route />, state: s(pre === 0 && by("routed") === 0, doclingDone > 0), meta: `${hard} → CU` },
+    const steps = [
+      { key: "docling", state: s(pre === 0, true), meta: `${doclingDone}/${total}` },
+      { key: "route", state: s(pre === 0 && by("routed") === 0, doclingDone > 0), meta: `→ ${hard}` },
       {
         key: "cu",
-        icon: <Sparkles />,
         state: s(at >= 1 && by("cu") === 0 && pre === 0, by("cu") > 0),
         meta: doc.stats.cu_skipped ? `${hard - doc.stats.cu_skipped}/${hard} · ${doc.stats.cu_skipped} skip` : `${hard}`,
       },
-      { key: "stitch", icon: <Layers />, state: s(at >= 2, doc.status === "stitching") },
+      { key: "stitch", state: s(at >= 2, doc.status === "stitching") },
       {
         key: "review",
-        icon: <UserCheck />,
         state: s(at >= 3, at === 2, stage === "ocr"),
         meta: autoMeta(`${by("approved")}/${total}`),
       },
-      { key: "chunk", icon: <Layers />, state: s(at >= 5, at === 3 || at === 4, at === 3 && stage === "ocr") },
+      { key: "chunk", state: s(at >= 5, at === 3 || at === 4, at === 3 && stage === "ocr") },
       {
         key: "chunkReview",
-        icon: <ListChecks />,
         state: s(at >= 6, at === 5, stage === "chunk"),
         meta: autoMeta(doc.stats.chunks ? `${doc.stats.chunks_approved ?? 0}/${doc.stats.chunks}` : undefined),
       },
-      { key: "index", icon: <FileText />, state: s(at >= 7, at === 6) },
-    ] as { key: string; icon: React.ReactNode; state: StepState; meta?: string }[];
+      { key: "index", state: s(at >= 7, at === 6) },
+    ] as { key: string; state: StepState; meta?: string }[];
+    // Tài liệu lỗi: bước đầu tiên chưa xong là bước bị lỗi
+    if (doc.status === "failed") {
+      const i = steps.findIndex((x) => x.state !== "done");
+      if (i >= 0) steps[i] = { ...steps[i], state: "failed" };
+    }
+    return steps;
   }, [doc]);
 }
 
-const STEP_BAR: Record<StepState, string> = {
-  done: "bg-success",
-  running: "bg-info animate-pulse",
-  action: "bg-warning",
-  pending: "bg-muted",
-  failed: "bg-danger",
-};
-const STEP_ICON: Record<StepState, string> = {
-  done: "text-success",
-  running: "text-info",
-  action: "text-warning",
-  pending: "text-muted-foreground",
-  failed: "text-danger",
+const STATE_ICON: Record<StepState, React.ReactNode> = {
+  done: <Check className="size-4 text-muted-foreground" />,
+  running: <Loader2 className="size-4 animate-spin text-info" />,
+  action: <span className="block size-2.5 rounded-full bg-warning ring-4 ring-warning/20" />,
+  pending: <Circle className="size-3.5 text-muted-foreground/50" />,
+  failed: <X className="size-4 text-danger" />,
 };
 
-/** Stepper gọn: ≥1400px một hàng 8 bước, md–1400px 2 hàng × 4; màn hẹp chỉ còn thanh 8 đoạn + bước hiện tại. */
-function Stepper({ steps }: { steps: ReturnType<typeof useSteps> }) {
+/** Vạch trên của ô bước: xong = xám đậm, chưa tới = xám nhạt; chỉ bước cần chú ý mới có màu. */
+const STATE_BAR: Record<StepState, string> = {
+  done: "bg-muted-foreground/50",
+  running: "bg-info",
+  action: "bg-warning",
+  pending: "bg-border",
+  failed: "bg-danger",
+};
+
+/** 8 bước dạng dải ngang (4 cột ở màn vừa, 8 cột ở màn rộng): tên bước · trạng thái + số liệu. */
+function StepBar({ steps }: { steps: ReturnType<typeof useSteps> }) {
   const { t } = useTranslation();
   const label: Record<StepState, string> = {
     pending: t("detail.stepPending"),
@@ -115,61 +108,56 @@ function Stepper({ steps }: { steps: ReturnType<typeof useSteps> }) {
     failed: t("jobStatus.failed"),
   };
   const meta = (m?: string) => (m === "auto" ? t("detail.autoStep") : m);
-  const status = (s: (typeof steps)[number]) => `${label[s.state]}${s.meta ? ` · ${meta(s.meta)}` : ""}`;
-  const icon = (s: (typeof steps)[number]) =>
-    s.state === "done" ? <Check /> : s.state === "running" ? <Loader2 className="animate-spin" /> : s.icon;
-  let cur = steps.findIndex((s) => s.state === "action" || s.state === "running" || s.state === "failed");
-  if (cur < 0) cur = steps.every((s) => s.state === "done") ? steps.length - 1 : Math.max(0, steps.findIndex((s) => s.state === "pending"));
-  const current = steps[cur];
+  const cur = steps.findIndex((s) => s.state === "action" || s.state === "running" || s.state === "failed");
   return (
-    <>
-      <ol className="hidden grid-cols-4 gap-x-3 gap-y-4 md:grid min-[1400px]:grid-cols-8 min-[1400px]:gap-x-2">
-        {steps.map((s) => (
-          <li key={s.key} className="flex min-w-0 flex-col gap-1.5" aria-current={s === current ? "step" : undefined}>
-            <span className={cn("h-1.5 rounded-full", STEP_BAR[s.state])} />
+    <ol aria-label={t("viewer.pipeline.title")} className="grid shrink-0 grid-cols-2 gap-px border-b border-border bg-border sm:grid-cols-4 xl:grid-cols-8">
+      {steps.map((s, i) => (
+        <li
+          key={s.key}
+          title={`${t(`steps.${s.key}`)} — ${t(`viewer.pipeline.stepDef.${s.key}`)}`}
+          aria-current={i === cur ? "step" : undefined}
+          className={cn("relative min-w-0 bg-card px-3 pb-2 pt-2.5", i === cur && "bg-accent")}
+        >
+          <span className={cn("absolute inset-x-0 top-0 h-0.5", STATE_BAR[s.state])} aria-hidden />
+          <div className="flex items-center gap-1.5">
+            <span className="flex size-4 shrink-0 items-center justify-center">{STATE_ICON[s.state]}</span>
             <span
               className={cn(
-                "flex min-w-0 items-start gap-1.5 break-words text-xs leading-tight [&_svg]:mt-px [&_svg]:size-3.5 [&_svg]:shrink-0",
-                s.state === "pending" ? "text-muted-foreground" : "font-medium",
-                s.state === "action" && "font-semibold",
+                "truncate text-sm",
+                s.state === "pending" ? "text-muted-foreground" : i === cur && "font-medium",
               )}
             >
-              <span className={STEP_ICON[s.state]}>{icon(s)}</span>
-              <span className="min-w-0">{t(`steps.${s.key}`)}</span>
+              {t(`viewer.pipeline.stepShort.${s.key}`, { defaultValue: t(`steps.${s.key}`) })}
             </span>
-            <span className={cn("text-[11px]", s.state === "action" ? "text-warning" : "text-muted-foreground")}>
-              {status(s)}
-            </span>
-          </li>
-        ))}
-      </ol>
-      {current && (
-        <div className="flex flex-col gap-2 md:hidden">
-          <div className="flex gap-1">
-            {steps.map((s) => (
-              <span key={s.key} className={cn("h-1.5 flex-1 rounded-full", STEP_BAR[s.state])} />
-            ))}
           </div>
-          <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm">
-            <span className="font-mono text-xs text-muted-foreground">
-              {cur + 1}/{steps.length}
-            </span>
-            <span className={cn("flex items-center gap-1.5 font-semibold [&_svg]:size-4", STEP_ICON[current.state])}>
-              {icon(current)}
-              <span className="text-foreground">{t(`steps.${current.key}`)}</span>
-            </span>
-            <span className={cn("text-xs", current.state === "action" ? "text-warning" : "text-muted-foreground")}>
-              {status(current)}
-            </span>
-          </p>
-        </div>
-      )}
-    </>
+          <div
+            className={cn(
+              "mt-0.5 truncate pl-5.5 text-xs tabular-nums",
+              s.state === "action" ? "font-medium text-warning" : s.state === "failed" ? "text-danger" : "text-muted-foreground",
+            )}
+          >
+            {label[s.state]}
+            {s.meta ? ` · ${meta(s.meta)}` : ""}
+          </div>
+        </li>
+      ))}
+    </ol>
   );
 }
 
-/** Tab パイプライン của màn chi tiết tài liệu: tiến độ các bước, nút thao tác, live log ở dưới.
- *  Live log dùng chung kết nối SSE của màn (DocumentViewer) — mỗi màn chỉ một kết nối. */
+function Row({ label, children }: { label: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <PaneRow>
+      <span className="w-24 shrink-0 text-muted-foreground">{label}</span>
+      <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">{children}</span>
+    </PaneRow>
+  );
+}
+
+/** Tab パイプライン: trên = dải 8 bước (là tiêu đề của tab, không thêm thanh 工程); dưới = 3 ngăn rộng bằng nhau
+ *  情報 | 認識結果 | 要対応ページ, cùng thanh tiêu đề và cùng chiều cao dòng (`pane.tsx`); chân = live log thu gọn được.
+ *  Màn ≥ 1024px: vừa một màn, chỉ ngăn nào dài mới tự cuộn.
+ *  Banner chờ review nằm dưới thanh trên (ReviewGate, render ở DocumentViewer). Live log dùng chung kết nối SSE. */
 export function PipelineTab({
   docId,
   onTab,
@@ -189,6 +177,7 @@ export function PipelineTab({
   const qc = useQueryClient();
   const toastError = useToastError();
   const [renaming, setRenaming] = useState(false);
+  const [logOpen, setLogOpen] = useState<boolean | null>(null);
   const doc = useQuery({ queryKey: ["document", docId], queryFn: () => api.get<Doc>(`/documents/${docId}`) });
   const steps = useSteps(doc.data);
   // Chất lượng sau pipeline + số cảnh báo chưa xử lý (chỉ có khi đã qua bước nối trang)
@@ -211,101 +200,127 @@ export function PipelineTab({
 
   if (doc.isLoading || !doc.data)
     return (
-      <div className="flex flex-col gap-4 p-4 lg:p-6">
-        <Skeleton className="h-36" />
-        <Skeleton className="h-80" />
+      <div className="flex flex-1 flex-col gap-4 p-4">
+        <Skeleton className="h-14" />
+        <div className="grid flex-1 gap-4 lg:grid-cols-3">
+          <Skeleton className="h-72" />
+          <Skeleton className="hidden h-72 lg:block" />
+          <Skeleton className="hidden h-72 lg:block" />
+        </div>
       </div>
     );
   const d = doc.data;
   const total = d.page_to - d.page_from + 1;
   const failed = d.stats.failed ?? 0;
+  const hard = d.stats.hard ?? 0;
+  const cuSkipped = d.stats.cu_skipped ?? 0;
   const q = quality.data;
   const editor = can("reviewer");
+  // Live log mở sẵn khi đang chạy; dừng chờ review / xong → thu gọn (người dùng tự mở lại được)
+  const running = steps.some((s) => s.state === "running");
+  const showLog = logOpen ?? running;
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto">
-      <div className="mx-auto flex max-w-[1400px] flex-col gap-4 p-4 lg:p-6">
-        <Card>
-          <CardContent className="flex flex-col gap-4 py-4">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="flex min-w-0 flex-col gap-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <p className="text-sm font-semibold">{t("detail.pipeline")}</p>
-                  <DocStatusBadge status={d.status} />
-                  <Badge tone={reviewMode(d) === "manual" ? "neutral" : "primary"}>
-                    {t(`detail.mode.${reviewMode(d)}`)}
-                  </Badge>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  {t(`kinds.${d.kind}`, { defaultValue: d.kind })} ·{" "}
-                  {t("documents.bookPages", { from: d.book_page_start, to: d.book_page_start + total - 1 })} · PDF p
-                  {d.page_from}–{d.page_to} / {d.total_pdf_pages} · {t("jobs.configVersion", { v: d.config_version })}
-                </p>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                {editor && (
-                  <Button variant="ghost" size="sm" onClick={() => setRenaming(true)}>
-                    <Pencil />
-                    {t("common.rename")}
-                  </Button>
-                )}
-                {editor && failed > 0 && (
-                  <Button variant="outline" size="sm" onClick={() => action("retry_failed")}>
-                    <RefreshCw />
-                    {t("detail.retryFailed")}
-                  </Button>
-                )}
-              </div>
-            </div>
+    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto lg:overflow-hidden">
+      <StepBar steps={steps} />
+      {/* Dải thao tác — chỉ khi có việc: chạy lại trang lỗi, hoặc đã sẵn sàng để thử chat */}
+      {(failed > 0 || d.status === "indexed") && (
+        <div className="flex min-h-10 shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-border bg-card px-5 py-1.5 text-sm">
+          {failed > 0 ? (
+            <>
+              <X className="size-4 shrink-0 text-danger" aria-hidden />
+              <span className="min-w-0 flex-1">{t("viewer.pipeline.failedNote", { count: failed })}</span>
+              {editor && (
+                <Button variant="outline" size="sm" className="h-7" onClick={() => action("retry_failed")}>
+                  <RefreshCw />
+                  {t("detail.retryFailed")}
+                </Button>
+              )}
+            </>
+          ) : (
+            <>
+              <Check className="size-4 shrink-0 text-success" aria-hidden />
+              <span className="min-w-0 flex-1">{t("detail.readyToChat")}</span>
+              {editor && (
+                <Button size="sm" variant="outline" className="h-7" onClick={() => nav("/test/chat")}>
+                  <MessagesSquare />
+                  {t("detail.openChat")}
+                </Button>
+              )}
+            </>
+          )}
+        </div>
+      )}
 
-            <div className="flex flex-wrap items-center gap-2 text-xs">
-              {(d.stats.hard ?? 0) > 0 && <Badge tone="violet">{t("detail.hardPages", { n: d.stats.hard })}</Badge>}
-              {(d.stats.cu_skipped ?? 0) > 0 && (
-                <Badge tone="warning">{t("detail.cuSkipped", { n: d.stats.cu_skipped })}</Badge>
-              )}
-              {failed > 0 && (
-                <Badge tone="danger">
-                  {t("pageStatus.failed")}: {failed}
-                </Badge>
-              )}
-              {q && (
-                <Badge tone={q.grade === "good" ? "success" : q.grade === "fair" ? "warning" : "danger"}>
-                  {t(`viewer.grade.${q.grade}`)} · {q.score}
-                </Badge>
-              )}
-              {q && q.weak_open > 0 && (
-                <button type="button" onClick={() => onTab("inspect")} className="cursor-pointer">
-                  <Badge tone="warning">
-                    <AlertTriangle />
-                    {t("detail.weakOpen", { n: q.weak_open })}
-                  </Badge>
-                </button>
-              )}
-            </div>
-
-            <Stepper steps={steps} />
-
-            <ReviewGate doc={d} canEdit={editor} variant="card" onTab={onTab} />
-            {d.status === "indexed" && (
-              <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-success-soft px-3 py-2 text-sm text-success">
-                <span className="flex items-center gap-2 font-medium">
-                  <Check className="size-4" />
-                  {t("detail.readyToChat")}
-                </span>
-                {editor && (
-                  <Button size="sm" variant="outline" onClick={() => nav("/test/chat")}>
-                    <MessagesSquare />
-                    {t("detail.openChat")}
-                  </Button>
-                )}
-              </div>
+      <div className="grid grid-cols-1 gap-px bg-border lg:min-h-0 lg:flex-1 lg:grid-cols-3">
+        <Pane className="lg:min-h-0">
+          <PaneHeader title={t("viewer.info.title")}>
+            {editor && (
+              <Button variant="ghost" size="sm" className="-mr-2 h-7 text-muted-foreground" onClick={() => setRenaming(true)}>
+                <Pencil />
+                {t("common.rename")}
+              </Button>
             )}
-          </CardContent>
-        </Card>
-
-        <RenameDialog doc={renaming ? d : null} onClose={() => setRenaming(false)} />
-        <LiveLog events={events} connected={connected} max={maxEvents} height="h-[min(60vh,560px)]" />
+          </PaneHeader>
+          <div className="lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
+            <Row label={t("viewer.pipeline.status")}>
+              <DocStatusBadge status={d.status} />
+            </Row>
+            <Row label={t("viewer.pipeline.kind")}>{t(`kinds.${d.kind}`, { defaultValue: d.kind })}</Row>
+            <Row label={t("viewer.pipeline.bookPages")}>
+              <span className="tabular-nums">P{d.book_page_start}–{d.book_page_start + total - 1}</span>
+            </Row>
+            <Row label={t("viewer.pipeline.pdfPages")}>
+              <span className="tabular-nums">
+                p{d.page_from}–{d.page_to} / {d.total_pdf_pages}
+              </span>
+            </Row>
+            {hard > 0 && (
+              <Row label={t("viewer.pipeline.cu")}>
+                <span className="tabular-nums">{t("viewer.pipeline.pages", { count: hard })}</span>
+                {cuSkipped > 0 && <span className="text-warning">{t("viewer.pipeline.cuSkipped", { n: cuSkipped })}</span>}
+              </Row>
+            )}
+            {q && (
+              <Row label={t("viewer.pipeline.quality")}>
+                <GradeChip grade={q.grade} score={q.score} />
+                {q.weak_open > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => onTab("inspect")}
+                    className="inline-flex cursor-pointer items-center gap-0.5 text-xs font-medium text-warning hover:underline"
+                  >
+                    {t("detail.weakOpen", { n: q.weak_open })}
+                    <ChevronRight className="size-3.5" aria-hidden />
+                  </button>
+                )}
+              </Row>
+            )}
+            {failed > 0 && (
+              <Row label={t("viewer.pipeline.failed")}>
+                <span className="tabular-nums text-danger">{t("viewer.pipeline.pages", { count: failed })}</span>
+              </Row>
+            )}
+            <Row label={t("viewer.pipeline.config")}>
+              <span className="tabular-nums">v{d.config_version}</span>
+            </Row>
+          </div>
+        </Pane>
+        <RecognitionPanes docId={docId} className="lg:min-h-0" />
       </div>
+
+      <LiveLog
+        bare
+        className="shrink-0 border-t border-border"
+        events={events}
+        connected={connected}
+        max={maxEvents}
+        open={showLog}
+        onOpenChange={setLogOpen}
+        height="h-[min(32vh,320px)]"
+      />
+
+      <RenameDialog doc={renaming ? d : null} onClose={() => setRenaming(false)} />
     </div>
   );
 }

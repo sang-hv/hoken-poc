@@ -1,6 +1,6 @@
 """Lớp 1 — cấu hình hạ tầng lõi (bootstrap).
 
-DevOps đặt các giá trị này qua biến môi trường / IaC lúc deploy. Secret (mật khẩu DB, master key,
+DevOps đặt các giá trị này qua biến môi trường / IaC lúc deploy. Secret (mật khẩu DB, API key,
 JWT secret...) có nguồn gốc ở Key Vault / Secrets Manager và được nền tảng đưa vào env
 (tham chiếu Key Vault của Container Apps, `secrets` của ECS task definition). Ở local thì lấy từ `.env`.
 
@@ -32,6 +32,9 @@ def _env(name: str, default: str = "") -> str:
     return os.environ.get(name, default).strip()
 
 
+PARSER_TYPES = ("docling", "paddleocr")
+
+
 @dataclass(frozen=True)
 class BootstrapSettings:
     app_env: str = "dev"  # dev | prod
@@ -61,14 +64,12 @@ class BootstrapSettings:
     queue_prefix: str = "hoken"
     sqs_queue_url_prefix: str = ""  # vd https://sqs.ap-northeast-1.amazonaws.com/123456789012/hoken-
 
-    # Secret: local | azure_keyvault | aws_secrets
-    secret_backend: str = "local"
-    secret_master_key: str = field(default="", repr=False)
-    key_vault_url: str = ""
-    aws_secrets_prefix: str = "hoken/"
-
     jwt_secret: str = field(default="", repr=False)
     session_hours: int = 12
+
+    # Parser (標準解析) chạy trong worker hàng đợi "docling": docling | paddleocr. Thư viện tương ứng chỉ có
+    # trong image worker parser (docker/app.Dockerfile target docling / paddleocr) hoặc .venv-parser.
+    parser_type: str = "docling"
 
     @property
     def is_prod(self) -> bool:
@@ -81,10 +82,9 @@ class BootstrapSettings:
             "db_type": self.db_type,
             "blob_type": self.blob_type,
             "queue_type": self.queue_type,
-            "secret_backend": self.secret_backend,
+            "parser_type": self.parser_type,
             "aws_region": self.aws_region,
             "cosmos_endpoint": self.cosmos_endpoint,
-            "key_vault_url": self.key_vault_url,
             "s3_bucket": self.s3_bucket,
             "azure_blob_account_url": self.azure_blob_account_url,
         }
@@ -93,12 +93,12 @@ class BootstrapSettings:
         problems = []
         if not self.jwt_secret or len(self.jwt_secret) < 32:
             problems.append("JWT_SECRET phải có ít nhất 32 ký tự")
-        if self.secret_backend == "local" and not self.secret_master_key:
-            problems.append("SECRET_MASTER_KEY bắt buộc khi SECRET_BACKEND=local")
-        if self.is_prod and "local" in (self.blob_type, self.secret_backend):
-            problems.append("APP_ENV=prod không dùng adapter local cho blob/secret")
+        if self.is_prod and self.blob_type == "local":
+            problems.append("APP_ENV=prod không dùng adapter local cho blob")
         if self.is_prod and self.db_type in ("memory",):
             problems.append("APP_ENV=prod không dùng DB memory")
+        if self.parser_type not in PARSER_TYPES:
+            problems.append(f"PARSER_TYPE phải là một trong {', '.join(PARSER_TYPES)}")
         if problems:
             raise RuntimeError("Cấu hình bootstrap không hợp lệ: " + "; ".join(problems))
 
@@ -126,12 +126,9 @@ def settings_from_env() -> BootstrapSettings:
         azure_queue_account_url=_env("AZURE_QUEUE_ACCOUNT_URL"),
         queue_prefix=_env("QUEUE_PREFIX", "hoken"),
         sqs_queue_url_prefix=_env("SQS_QUEUE_URL_PREFIX"),
-        secret_backend=_env("SECRET_BACKEND", "local"),
-        secret_master_key=_env("SECRET_MASTER_KEY"),
-        key_vault_url=_env("KEY_VAULT_URL"),
-        aws_secrets_prefix=_env("AWS_SECRETS_PREFIX", "hoken/"),
         jwt_secret=_env("JWT_SECRET"),
         session_hours=int(_env("SESSION_HOURS", "12") or 12),
+        parser_type=_env("PARSER_TYPE", "docling").strip().lower(),
     )
 
 

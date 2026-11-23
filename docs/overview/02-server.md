@@ -32,7 +32,7 @@ Cùng một bộ code chạy được ở 3 nơi. Chỉ đổi **biến môi tr�
 | `worker-light` | — | nhỏ | Bước ③ định tuyến, ⑤ nối trang (sau OCR, trước chunk) |
 | `worker-ai` ×2 | — | nhỏ | Bước ④ CU, ⑥ kiểm tra chất lượng, ⑧ chunk, ⑩ embedding + index. Chủ yếu chờ mạng → tăng số bản nếu cần nhanh hơn |
 | `worker-docling-gpu` | — | 1 GPU NVIDIA | Tuỳ chọn, bật bằng `--profile gpu` |
-| `postgres` | 5432 | | Có **pgvector + pg_bigm**. Một DB làm 4 việc: DB · Queue · Search · Secret |
+| `postgres` | 5432 | | Có **pgvector + pg_bigm**. Một DB làm 3 việc: DB · Queue · Search |
 
 Dữ liệu nằm trong 2 **volume**: `pgdata` (Postgres) và `blob` (PDF, ảnh trang, JSON).
 
@@ -55,7 +55,7 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-Mở `http://localhost:8080` → màn Setup tạo admin đầu tiên. Trong `.env` phải đổi `SECRET_MASTER_KEY` và `JWT_SECRET`.
+Mở `http://localhost:8080` → màn Setup tạo admin đầu tiên. Trong `.env` phải đổi `JWT_SECRET` và điền `LLM_*` / `EMBEDDING_*` / `CU_*` / `SEARCH_*`.
 
 **Mạng:**
 - **Vào**: chỉ cần mở cổng **8080** (hoặc 443 nếu đặt reverse proxy / HTTPS phía trước).
@@ -103,10 +103,10 @@ Mở `http://localhost:8080` → màn Setup tạo admin đầu tiên. Trong `.en
 
 | Lớp | Gồm | Ai đặt | Đặt ở đâu |
 |---|---|---|---|
-| 1. Hạ tầng lõi | DB, Blob, Queue, Secret backend, JWT | DevOps | Biến môi trường / IaC (`.env.example`) |
-| 2. Dịch vụ AI & SSO | LLM, embedding, CU, Search, SSO | Admin | Màn Cài đặt trên UI (prod không có lựa chọn Local) |
-| 3. Secret của lớp 2 | API key | Admin | SecretStore (Key Vault / Secrets Manager); DB chỉ giữ cờ "đã đặt" |
-| 4. Tuỳ chọn pipeline | Ngưỡng trang dễ, ngưỡng cảnh báo / tự đọc lại, số vòng chunk… | Admin | DB, có phiên bản; mỗi job ghi phiên bản đã dùng |
+| 1. Hạ tầng lõi | DB, Blob, Queue, JWT | DevOps | Biến môi trường: dev `.env`, prod IaC (`.env.example`) |
+| 2. Dịch vụ AI & SSO | LLM, embedding, CU, Search, SSO | DevOps | Biến môi trường `<COMPONENT>_*`, `AUTH_*` — giống lớp 1; màn Cài đặt chỉ xem (prod không nhận Local) |
+| 3. Secret | API key, client secret, mật khẩu DB | DevOps | Prod: Key Vault / Secrets Manager → env qua nền tảng; dev: `.env`. API chỉ trả cờ "đã đặt" |
+| 4. Tuỳ chọn pipeline | Ngưỡng cảnh báo / tự đọc lại / chunk cần xem (còn lại cố định trong code) | Admin | Màn Cài đặt → DB, có phiên bản; mỗi job ghi phiên bản đã dùng |
 
 Ví dụ đổi nơi chạy DB / file / queue (lớp 1):
 
@@ -115,7 +115,7 @@ Ví dụ đổi nơi chạy DB / file / queue (lớp 1):
 | `DB_TYPE` | `postgres` | `cosmos` | `dynamodb` |
 | `BLOB_TYPE` | `local` | `azure` | `s3` |
 | `QUEUE_TYPE` | `postgres` | `azure` | `sqs` |
-| `SECRET_BACKEND` | `local` | `azure_keyvault` | `aws_secrets` |
+| `LLM_TYPE` | `local` | `azure` | `aws` |
 
 ## 6. Image
 

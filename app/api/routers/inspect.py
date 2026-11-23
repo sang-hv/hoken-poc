@@ -87,6 +87,12 @@ def quality(doc_id: str, c: Container = Depends(container), _: User = Depends(vi
     return svc.doc_quality(c, doc_id, build=True) or svc.empty_quality()
 
 
+@router.get("/{doc_id}/recognition")
+def recognition(doc_id: str, c: Container = Depends(container), _: User = Depends(viewer)):
+    """Tổng kết nhận diện (良好 / 要確認 / 未認識) — docs/STATUS.md §C."""
+    return _call(svc.recognition_summary, c, doc_id)
+
+
 @router.get("/{doc_id}/weak")
 def weak(doc_id: str, c: Container = Depends(container), _: User = Depends(viewer)):
     return _call(svc.weak_items, c, doc_id)

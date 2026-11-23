@@ -52,38 +52,96 @@ def test_setup_login_roles_and_csrf(client, container):
     assert client.get("/api/settings/providers").status_code == 403  # viewer không vào cài đặt
 
 
-def test_provider_settings_secrets_never_returned(client, container):
-    _setup_admin(client)
-    cat = client.get("/api/settings/providers").json()["catalog"]
-    assert {s["type"] for s in cat["cu"]} == {"azure"}
-    assert {s["type"] for s in cat["llm"]} == {"local", "azure", "aws"}
-    body = {
-        "type": "azure",
-        "config": {"endpoint": "https://x.openai.azure.com", "deployment": "gpt", "auth": "key"},
-        "secrets": {"api_key": "SUPER-SECRET"},
-    }
-    r = client.put("/api/settings/providers/llm", json=body, headers=H)
-    assert r.status_code == 200, r.text
-    assert "SUPER-SECRET" not in r.text
-    comp = r.json()["components"]["llm"]
-    assert comp["secrets_set"] == ["api_key"]
-    assert container.secrets.get("hoken-llm-azure-api-key") == "SUPER-SECRET"
-    # Cập nhật không gửi lại secret → giữ secret cũ
-    body["secrets"] = {}
-    body["config"]["deployment"] = "gpt2"
-    r = client.put("/api/settings/providers/llm", json=body, headers=H)
-    assert r.json()["components"]["llm"]["secrets_set"] == ["api_key"]
-    # Thiếu trường bắt buộc → 400
-    r = client.put("/api/settings/providers/cu", json={"type": "azure", "config": {}}, headers=H)
-    assert r.status_code == 400
-
-
-def test_prod_hides_local(container):
+def test_providers_from_env_secrets_never_returned(client, container):
+    """Lớp 2 đọc từ biến môi trường; API chỉ xem, secret chỉ có cờ "đã đặt"."""
     from app.services.config_service import ConfigService
 
-    cs = ConfigService(container.repo, container.secrets, "prod")
-    cat = cs.catalog()
-    assert all(s["type"] != "local" for specs in cat.values() for s in specs)
+    _setup_admin(client)
+    container.config = ConfigService(
+        container.repo,
+        "dev",
+        {
+            "LLM_TYPE": "azure",
+            "LLM_ENDPOINT": "https://x.openai.azure.com",
+            "LLM_DEPLOYMENT": "gpt",
+            "LLM_AUTH": "key",
+            "LLM_API_KEY": "SUPER-SECRET",
+            "CU_TYPE": "azure",  # thiếu CU_ENDPOINT
+            "SEARCH_TYPE": "nope",
+        },
+    )
+    r = client.get("/api/settings/providers")
+    assert r.status_code == 200 and "SUPER-SECRET" not in r.text
+    comps = r.json()["components"]
+    llm = comps["llm"]
+    assert llm["ok"] and llm["type"] == "azure"
+    rows = {f["name"]: f for f in llm["fields"]}
+    assert rows["api_key"] == {"name": "api_key", "env": "LLM_API_KEY", "kind": "secret", "set": True}
+    assert rows["deployment"]["value"] == "gpt" and rows["api_version"]["default"] is True
+    assert comps["cu"]["ok"] is False and comps["cu"]["error"] == {"code": "required", "env": "CU_ENDPOINT"}
+    assert comps["search"]["error"] == {"code": "type_unsupported", "env": "SEARCH_TYPE"}
+    assert comps["search"]["ok"] is False and comps["embedding"]["type"] is None
+    assert container.config.is_configured("llm") and not container.config.is_configured("cu")
+    # Không còn API sửa lớp 2 / SSO
+    assert client.put("/api/settings/providers/llm", json={}, headers=H).status_code in (404, 405)
+    r = client.post("/api/settings/providers/cu/test", headers=H)
+    assert r.json() == {"ok": False, "config_error": {"code": "required", "env": "CU_ENDPOINT"}}
+
+
+def test_managed_identity_needs_no_key():
+    from app.services.config_service import ConfigService
+
+    env = {"CU_TYPE": "azure", "CU_ENDPOINT": "https://x.services.ai.azure.com"}
+    assert ConfigService(None, "prod", env).is_configured("cu")  # auth mặc định managed_identity
+    assert not ConfigService(None, "prod", {**env, "CU_AUTH": "key"}).is_configured("cu")
+
+
+def test_prod_rejects_local():
+    from app.services.config_service import ConfigService
+
+    env = {"LLM_TYPE": "local", "LLM_MODEL": "m"}
+    assert ConfigService(None, "dev", env).is_configured("llm")
+    assert not ConfigService(None, "prod", env).is_configured("llm")
+
+
+def test_sso_from_env(client, container):
+    from app.services.config_service import ConfigService
+
+    _setup_admin(client)
+    env = {"AUTH_ENTRA_TENANT_ID": "t1", "AUTH_ENTRA_CLIENT_ID": "c1", "AUTH_ENTRA_DEFAULT_ROLE": "admin"}
+    container.config = ConfigService(container.repo, "dev", env)
+    assert client.get("/api/auth/providers").json()["providers"] == []  # thiếu client_secret → chưa bật
+    container.config = ConfigService(container.repo, "dev", {**env, "AUTH_ENTRA_CLIENT_SECRET": "S3CRET"})
+    assert client.get("/api/auth/providers").json()["providers"] == ["entra"]
+    assert "S3CRET" not in client.get("/api/auth/providers").text
+    entra = container.config.auth()["entra"]
+    assert entra["secrets_set"] == ["client_secret"] and entra["default_role"] == "viewer"  # admin không được phép
+    assert container.config.auth_secret("entra") == "S3CRET"
+
+
+def test_pipeline_settings_only_editable_keys(client, container):
+    """Admin chỉ chỉnh vài mục trong EDITABLE; prompt/luật cố định trong code, khoá lạ bị bỏ qua."""
+    from app.domain.options import DEFAULT_CHUNK_PROMPT, EDITABLE
+
+    _setup_admin(client)
+    got = client.get("/api/settings/pipeline").json()
+    assert {s: set(v) for s, v in got["options"].items()} == {s: set(k) for s, k in EDITABLE.items()}
+
+    r = client.put(
+        "/api/settings/pipeline",
+        json={
+            "options": {"review": {"mode": "manual"}, "chunk": {"prompt": "hack"}, "quality": {"weak_confidence": 0.6}}
+        },
+        headers=H,
+    )
+    assert r.status_code == 200, r.text
+    _, opts = container.config.pipeline()
+    assert opts.review.mode == "warn" and opts.quality.weak_confidence == 0.6  # mode không chỉnh được
+    assert opts.review.chunk_warn_below == 0.7  # không gửi → giữ nguyên
+    assert opts.chunk.prompt == DEFAULT_CHUNK_PROMPT  # khoá không chỉnh được → theo code
+
+    r = client.put("/api/settings/pipeline", json={"options": {"quality": {"auto_vlm_below": 1.5}}}, headers=H)
+    assert r.status_code == 422
 
 
 def test_upload_review_flow_via_api(client, container, sample_pdf):

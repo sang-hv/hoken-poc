@@ -54,7 +54,7 @@ xám = nơi lưu dữ liệu · nét đứt = bên ngoài, tuỳ chọn hoặc �
 | **DB (DocStore)** | Trạng thái tài liệu, từng trang, chunk, lịch sử sửa, job |
 | **Blob** | File PDF gốc, ảnh trang, kết quả OCR (JSON / Markdown) |
 | **Search index** | Chunk + **vector**, tìm kiểu **hybrid** (từ khoá + ý nghĩa) |
-| **SecretStore** | Key của dịch vụ AI. DB chỉ lưu cờ "đã đặt", không lưu key |
+| **Secret** | Key của dịch vụ AI, client secret SSO: biến môi trường (prod lấy từ Key Vault / Secrets Manager). Không lưu trong DB |
 
 **Dịch vụ AI (cloud)**
 
@@ -115,7 +115,7 @@ Câu hỏi → tìm căn cứ (**hybrid**) → đủ căn cứ? → **có**: LLM
 | Blob | Thư mục | Blob Storage | S3 |
 | Queue | Bảng Postgres | Storage Queue | SQS |
 | Search | Postgres + pgvector + pg_bigm | AI Search | OpenSearch |
-| Secret | Mã hoá trong DB | Key Vault | Secrets Manager |
+| Secret | `.env` | Key Vault → env | Secrets Manager → env |
 | LLM / Embedding | OpenAI-compatible | Azure OpenAI | Bedrock |
 | CU | Azure | Azure | Azure |
 
@@ -123,7 +123,7 @@ Câu hỏi → tìm căn cứ (**hybrid**) → đủ căn cứ? → **có**: LLM
 
 | Vai trò | Được làm |
 |---|---|
-| **Admin** | Mọi thứ + cài đặt dịch vụ AI, secret, SSO, người dùng, audit |
+| **Admin** | Mọi thứ + tuỳ chọn pipeline, người dùng, audit; xem cấu hình dịch vụ AI / SSO |
 | **Reviewer** | Upload, review OCR / chunk, chạy lại job, tìm thử |
 | **Viewer** | Chỉ xem |
 

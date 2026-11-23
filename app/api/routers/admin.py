@@ -1,15 +1,17 @@
-"""Cài đặt (lớp 2: dịch vụ AI & search, SSO; lớp 4: tuỳ chọn pipeline), người dùng, audit, hệ thống, tìm thử."""
+"""Cài đặt (lớp 2: trạng thái dịch vụ AI cho cảnh báo ở dashboard; lớp 4: tuỳ chọn pipeline),
+người dùng, audit, hệ thống, tìm thử. SSO đặt bằng env, không có API xem."""
 
 from __future__ import annotations
 
 import time
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, ValidationError
 
 from app.api.deps import admin, container, current_user, reviewer, viewer
 from app.core.util import hash_password, new_id, now_iso
 from app.domain.models import Role, User
+from app.domain.options import editable_dump
 from app.services.container import Container
 
 router = APIRouter(prefix="/api", tags=["admin"])
@@ -33,35 +35,23 @@ def system(c: Container = Depends(container), _: User = Depends(viewer)):
     return {"bootstrap": c.settings.public_summary(), "health": health}
 
 
-# ------------------------------------------------------------------ lớp 2: provider
-class ProviderIn(BaseModel):
-    type: str
-    config: dict = Field(default_factory=dict)
-    secrets: dict[str, str | None] = Field(default_factory=dict)
-
-
+# ------------------------------------------------------------------ lớp 2: provider (từ env, chỉ xem)
 @router.get("/settings/providers")
 def get_providers(c: Container = Depends(container), _: User = Depends(admin)):
     return c.config.providers_public()
 
 
-@router.put("/settings/providers/{component}")
-def put_provider(component: str, body: ProviderIn, c: Container = Depends(container), user: User = Depends(admin)):
-    try:
-        c.config.update_provider(component, body.type, body.config, body.secrets, user.email)
-    except KeyError as e:
-        raise HTTPException(400, {"code": "unknown_adapter"}) from e
-    return c.config.providers_public()
-
-
 @router.post("/settings/providers/{component}/test")
-def test_provider(component: str, body: ProviderIn, c: Container = Depends(container), _: User = Depends(admin)):
+def test_provider(component: str, c: Container = Depends(container), _: User = Depends(admin)):
+    from app.services.config_service import ENV_PREFIX, NotConfigured
+
+    if component not in ENV_PREFIX:
+        raise HTTPException(404, {"code": "unknown_adapter"})
     t0 = time.monotonic()
     try:
-        adapter = c.config.build(component, body.type, body.config, body.secrets)
-        adapter.health()
-    except KeyError as e:
-        raise HTTPException(400, {"code": "unknown_adapter"}) from e
+        c.config.build(component).health()
+    except NotConfigured as e:
+        return {"ok": False, "config_error": e.public()}
     except Exception as e:  # noqa: BLE001
         return {"ok": False, "error": f"{type(e).__name__}: {str(e)[:300]}"}
     return {"ok": True, "ms": int((time.monotonic() - t0) * 1000)}
@@ -74,7 +64,7 @@ def get_pipeline(c: Container = Depends(container), _: User = Depends(viewer)):
     d = c.repo.get_setting("pipeline") or {}
     return {
         "version": v,
-        "options": opts.model_dump(mode="json"),
+        "options": editable_dump(opts),  # chỉ mục Admin chỉnh được; còn lại cố định trong code
         "updated_by": d.get("updated_by", ""),
         "updated_at": d.get("updated_at", ""),
     }
@@ -82,25 +72,11 @@ def get_pipeline(c: Container = Depends(container), _: User = Depends(viewer)):
 
 @router.put("/settings/pipeline")
 def put_pipeline(body: dict, c: Container = Depends(container), user: User = Depends(admin)):
-    v, opts = c.config.update_pipeline(body.get("options", body), user.email)
-    return {"version": v, "options": opts.model_dump(mode="json")}
-
-
-# ------------------------------------------------------------------ SSO
-@router.get("/settings/auth")
-def get_auth(c: Container = Depends(container), _: User = Depends(admin)):
-    return {
-        "providers": c.config.auth(),
-        "redirect_uris": {n: f"{c.settings.public_base_url}/api/auth/oidc/{n}/callback" for n in ("google", "entra")},
-    }
-
-
-@router.put("/settings/auth/{name}")
-def put_auth(name: str, body: dict, c: Container = Depends(container), user: User = Depends(admin)):
     try:
-        return {"providers": c.config.update_auth(name, body, user.email)}
-    except KeyError as e:
-        raise HTTPException(404, {"code": "unknown_provider"}) from e
+        v, opts = c.config.update_pipeline(body.get("options", body), user.email)
+    except ValidationError as e:
+        raise HTTPException(422, {"code": "invalid"}) from e
+    return {"version": v, "options": editable_dump(opts)}
 
 
 # ------------------------------------------------------------------ người dùng

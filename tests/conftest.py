@@ -5,9 +5,8 @@ import os
 import pytest
 
 os.environ.setdefault("JWT_SECRET", "test-secret-test-secret-test-secret-1234")
-os.environ.setdefault("SECRET_MASTER_KEY", "test-master-key")
 
-from app.adapters.memory import MemoryBlob, MemoryQueue, MemorySecrets, MemoryStore  # noqa: E402
+from app.adapters.memory import MemoryBlob, MemoryQueue, MemoryStore  # noqa: E402
 from app.core.settings import BootstrapSettings  # noqa: E402
 from app.services.container import Container, set_container  # noqa: E402
 
@@ -77,10 +76,8 @@ SAMPLE_PAGES = [
 
 @pytest.fixture
 def container():
-    s = BootstrapSettings(
-        app_env="dev", db_type="memory", queue_type="memory", jwt_secret="x" * 40, secret_master_key="k"
-    )
-    c = Container.build(s, store=MemoryStore(), queue=MemoryQueue(), blob=MemoryBlob(), secrets=MemorySecrets())
+    s = BootstrapSettings(app_env="dev", db_type="memory", queue_type="memory", jwt_secret="x" * 40)
+    c = Container.build(s, store=MemoryStore(), queue=MemoryQueue(), blob=MemoryBlob(), env={})
     set_container(c)
     yield c
     set_container(None)
@@ -92,12 +89,17 @@ def sample_pdf() -> bytes:
 
 
 def set_review_mode(container, mode: str) -> None:
-    """Đặt review.mode (auto | warn | manual) cho tài liệu upload sau đó."""
-    from app.domain.options import PipelineOptions
+    """Đặt review.mode (auto | warn | manual) cho tài liệu upload sau đó.
 
-    opts = PipelineOptions()
-    opts.review.mode = mode
-    container.repo.put_setting("pipeline", {"version": 1, "options": opts.model_dump(mode="json")})
+    Admin không chỉnh được mode (luôn "warn"), nên test thay `config.pipeline` của container này."""
+    orig = container.config.pipeline
+
+    def patched():
+        v, opts = orig()
+        opts.review.mode = mode
+        return v, opts
+
+    container.config.pipeline = patched
 
 
 def manual_review(container) -> None:

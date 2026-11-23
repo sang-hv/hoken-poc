@@ -27,6 +27,7 @@ from app.services.jobs import emit
 from app.steps import elements as E
 from app.steps import rules
 from app.steps.common import crop_png, k_page, k_source, render_page_png
+from app.steps.parser import PARSER_ENGINES
 
 log = logging.getLogger("hoken.inspect")
 
@@ -148,7 +149,7 @@ def _build(c: Container, doc: Document, p: Page, markdown: str) -> tuple[list[di
     cu_raw = _json(c, k_page(doc.id, p.page, "cu.json")) if p.cu_status == "done" else None
     tokens: list[E.Tok] = []
     need_tokens = not (cu_raw and ((cu_raw.get("result") or {}).get("contents"))) and (
-        meta.get("engine") != "docling" or any(e.get("text") is None for e in meta.get("elements") or [])
+        meta.get("engine") not in PARSER_ENGINES or any(e.get("text") is None for e in meta.get("elements") or [])
     )
     if need_tokens and c.blob.exists(k_source(doc.id)):
         tokens = E.pdfium_tokens(c.blob.get(k_source(doc.id)), p.page)
@@ -197,6 +198,9 @@ def assess(c: Container, doc: Document, p: Page, state: dict, markdown: str | No
         target["weak"].append(flag)
     for e in els:
         e["status"] = rules.element_status(e["weak"], e.get("status", ""))
+        # Nhóm lúc máy đọc xong: ghi ở lần chấm đầu tiên (trước khi AI tự đọc lại / người sửa), không đổi sau đó
+        if "initial" not in e and e["label"] not in rules.HEADER_FOOTER:
+            e["initial"] = rules.flags_bucket(e["weak"])
     vlm = state.get("vlm")
     vlm_score = vlm["score"] if vlm and vlm.get("md_version") == state.get("md_version") else None
     state["score"] = rules.page_quality_score(els, vlm_score)
@@ -210,7 +214,7 @@ def _carry_over(old: list[dict], new: list[dict]) -> None:
     for e in new:
         o = by_id.get(e["id"])
         if o and o["label"] == e["label"] and o.get("text", "").strip() == e.get("text", "").strip():
-            for k in ("status", "edited_by", "edited_at", "source", "confidence", "reread_from"):
+            for k in ("status", "edited_by", "edited_at", "source", "confidence", "reread_from", "initial"):
                 if k in o:
                     e[k] = o[k]
 
@@ -620,6 +624,64 @@ def doc_quality(c: Container, doc_id: str, build: bool = False) -> dict | None:
         "weak_total": total,
         "weak_open": sum(counts.values()),
         "pages": pages,
+    }
+
+
+def recognition_summary(c: Container, doc_id: str, build: bool = True) -> dict:
+    """Tổng kết nhận diện của một tài liệu (docs/STATUS.md §C): số phần tử nội dung theo nhóm, ở hai mốc —
+    `initial` (lúc máy đọc xong: good / weak / unread) và `current` (good / fixed / weak / unread) — tổng và theo
+    trang. Trang lỗi / chưa xử lý xong không có phần tử: liệt kê riêng. `estimated` = số phần tử dữ liệu cũ chưa
+    ghi `initial` (suy từ điểm yếu hiện tại)."""
+    doc = _doc(c, doc_id)
+
+    def zero(keys: tuple[str, ...]) -> dict[str, int]:
+        return dict.fromkeys(keys, 0)
+
+    init_keys = ("good", "weak", "unread")
+    total = {"elements": 0, "current": zero(rules.BUCKETS), "initial": zero(init_keys)}
+    pages, failed, pending, estimated = [], [], [], 0
+    for p in sorted(c.repo.list_pages(doc_id), key=lambda x: x.page):
+        if p.status == PageStatus.failed:
+            failed.append(p.page)
+            continue
+        if p.status not in READY:
+            pending.append(p.page)
+            continue
+        state = load_state(c, doc, p, build=build)
+        if not state:
+            pending.append(p.page)
+            continue
+        row = {
+            "page": p.page,
+            "book_page": p.book_page,
+            "elements": 0,
+            "current": zero(rules.BUCKETS),
+            "initial": zero(init_keys),
+        }
+        for e in state["elements"]:
+            cur = rules.element_bucket(e)
+            if cur is None:
+                continue
+            init = e.get("initial")
+            if init not in init_keys:
+                estimated += 1
+                init = rules.flags_bucket(e.get("weak") or [])
+            for target in (row, total):
+                target["elements"] += 1
+                target["current"][cur] += 1
+                target["initial"][init] += 1
+        pages.append(row)
+    return {
+        "doc_id": doc.id,
+        "name": doc.name,
+        "status": doc.status.value,
+        "unit": "element",
+        **total,
+        "estimated": estimated,
+        "pages": pages,
+        "pages_total": doc.page_to - doc.page_from + 1,
+        "pages_failed": failed,
+        "pages_pending": pending,
     }
 
 

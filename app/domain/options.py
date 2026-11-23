@@ -1,4 +1,9 @@
-"""Lớp 4 — tuỳ chọn pipeline. Lưu trong DB có phiên bản; mỗi job ghi lại phiên bản đã dùng."""
+"""Lớp 4 — tuỳ chọn pipeline.
+
+Mọi giá trị mặc định nằm trong code (file này). Chỉ vài mục trong `EDITABLE` cho Admin chỉnh trên UI; các mục
+đó lưu trong DB có phiên bản, mỗi job ghi lại phiên bản đã dùng. Mục còn lại (prompt, luật chunk, tiêu chí trang
+dễ, ...) đổi bằng code + review, để người dùng prod không chỉnh nhầm.
+"""
 
 from __future__ import annotations
 
@@ -65,7 +70,7 @@ class ReviewOptions(BaseModel):
     #   manual — luôn dừng ở hai bước review chờ duyệt tay.
     mode: ReviewMode = "warn"
     # (warn) chunk vi phạm luật hoặc có confidence dưới mức này → dừng ở チャンクレビュー
-    chunk_warn_below: float = 0.7
+    chunk_warn_below: float = Field(0.7, ge=0, le=1)
     # Vùng (chữ CU / phần tử Docling) có confidence dưới ngưỡng được viền đỏ trên ảnh trang.
     # Chỉ để tô màu — trang nào cũng vẫn phải review.
     low_confidence: float = 0.8
@@ -129,8 +134,8 @@ DEFAULT_REREAD_PROMPT = (
 class QualityOptions(BaseModel):
     """Chấm chất lượng sau pipeline + phát hiện điểm yếu (UI v2, tab 検査). Chủ: backend A2."""
 
-    weak_confidence: float = 0.8  # phần tử có confidence dưới mức này → điểm yếu low_confidence
-    auto_vlm_below: float = 0.6  # phần tử dưới mức này được tự gọi VLM đọc lại trong pipeline
+    weak_confidence: float = Field(0.8, ge=0, le=1)  # phần tử có confidence dưới mức này → điểm yếu low_confidence
+    auto_vlm_below: float = Field(0.6, ge=0, le=1)  # phần tử dưới mức này được tự gọi VLM đọc lại trong pipeline
     picture_needs_description: bool = True  # hình chưa có mô tả → điểm yếu picture_no_desc
     grade_good: int = 85  # điểm trang/tài liệu ≥ mức này = good (良好)
     grade_fair: int = 60  # ≥ mức này = fair (要注意), thấp hơn = poor (不良)
@@ -149,3 +154,28 @@ class PipelineOptions(BaseModel):
     index: IndexOptions = Field(default_factory=IndexOptions)
     chat: ChatOptions = Field(default_factory=ChatOptions)
     quality: QualityOptions = Field(default_factory=QualityOptions)
+
+
+# Mục Admin chỉnh được trên UI (section → các khoá). Còn lại luôn lấy theo code.
+# review.mode cố định "warn" (tự chạy, chỉ dừng khi có cảnh báo); auto / manual chỉ còn cho test và seed demo.
+# cu.enabled cố định bật: trang khó luôn qua 精密解析.
+EDITABLE: dict[str, tuple[str, ...]] = {
+    "review": ("chunk_warn_below",),
+    "quality": ("weak_confidence", "auto_vlm_below"),
+}
+
+
+def editable_dump(opts: PipelineOptions) -> dict:
+    """Chỉ các mục chỉnh được — dạng lưu DB và trả cho UI."""
+    full = opts.model_dump(mode="json")
+    return {sec: {k: full[sec][k] for k in keys} for sec, keys in EDITABLE.items()}
+
+
+def options_from(stored: dict | None) -> PipelineOptions:
+    """Mặc định theo code + các mục chỉnh được lấy từ `stored`; khoá khác trong `stored` bị bỏ qua."""
+    base = PipelineOptions().model_dump()
+    for sec, keys in EDITABLE.items():
+        for k in keys:
+            if stored and k in (stored.get(sec) or {}):
+                base[sec][k] = stored[sec][k]
+    return PipelineOptions(**base)

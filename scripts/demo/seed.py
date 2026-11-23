@@ -2,13 +2,13 @@
 
 Kết quả:
   - 3 người dùng: admin / reviewer / viewer @example.com, mật khẩu `password-1234`
-  - Dịch vụ AI trỏ vào mock server (http://localhost:8100): LLM, embedding (local), CU (azure), search pgvector
-  - 5 tài liệu theo các chế độ review.mode:
-      auto   — tự chạy hết tới index, chỉ gắn ⚠ (chat được ngay)
-      warn   — dừng ở OCR レビュー vì có cảnh báo (đã duyệt tay 1 trang) → popup レビュー / すべて承認 (緑本)
-      warn   — đã すべて承認 trang, dừng ở チャンクレビュー vì có chunk vi phạm luật (赤本 P536–543)
-      manual — luôn duyệt tay, đang ở OCR レビュー (2 trang đã duyệt)
-      manual — lỗi CU (job failed, có Retry)
+  - Dịch vụ AI trỏ vào mock server (http://localhost:8100) — đặt bằng biến môi trường trong scripts/demo/demo.env
+  - 4 tài liệu, đều theo luồng thật (review.mode = warn: tự chạy, chỉ dừng khi có cảnh báo). Tên tài liệu không
+    ghi trạng thái — trạng thái xem ở cột 状態:
+      赤本 P536–538 — đã duyệt hết, index xong (chat được ngay)
+      緑本 P372–375 — dừng ở OCR レビュー vì có cảnh báo (đã duyệt tay 1 trang) → popup レビュー / すべて承認
+      赤本 P536–543 — đã すべて承認 trang, dừng ở チャンクレビュー vì có chunk vi phạm luật
+      赤本 P600–601 — lỗi 精密解析 (job failed, có Retry)
   `--reset`: xoá hết tài liệu cũ trước khi seed (người dùng / cấu hình giữ nguyên).
 
 Docling không có trong môi trường dev này nên điểm Docling được GIẢ LẬP (`fake_docling`) để màn định tuyến,
@@ -17,6 +17,7 @@ khung layout và lý do định tuyến có dữ liệu. Dừng worker nền tr�
 Chạy:
   NODE_PATH=$(npm root -g) node scripts/demo/make_pdfs.js out/demo
   .venv/bin/python -m uvicorn scripts.demo.mock_ai:app --port 8100 &
+  set -a; . ./.env; . scripts/demo/demo.env; set +a
   .venv/bin/python -m scripts.demo.seed [--reset]
 """
 
@@ -32,10 +33,9 @@ from app.domain.models import PageFeatures, PageScores, Role, User
 from app.services import jobs
 from app.services import pipeline as pl
 from app.services.container import get_container
-from app.steps.docling_engine import PageAnalysis
+from app.steps.parser import PageAnalysis
 from app.steps.rules import join_wrapped_lines
 
-MOCK = "http://localhost:8100"
 PDF_DIR = Path("out/demo")
 PASSWORD = "password-1234"
 CODE = re.compile(r"^(?:区分番号「)?([A-Z]\d{3}(?:-\d+){0,3})")
@@ -78,7 +78,7 @@ def _union(boxes):
     ]
 
 
-def fake_docling(pdf: bytes, page: int, opts) -> PageAnalysis:
+def fake_docling(pdf: bytes, page: int, opts, parser: str = "docling") -> PageAnalysis:
     rects = _rects(pdf, page)
     texts = [t for t, _ in rects]
     joined = "\n".join(texts)
@@ -218,22 +218,10 @@ def main() -> int:
     admin, reviewer = users[Role.admin].email, users[Role.reviewer].email
 
     cfg = c.config
-    cfg.update_provider(
-        "llm",
-        "local",
-        {"base_url": f"{MOCK}/v1", "model": "mock-gpt", "mini_model": "mock-mini", "vision_model": "mock-vision"},
-        {"api_key": "mock-key"},
-        admin,
-    )
-    cfg.update_provider("embedding", "local", {"base_url": f"{MOCK}/v1", "model": "mock-embed", "dims": 256}, {}, admin)
-    cfg.update_provider(
-        "cu",
-        "azure",
-        {"endpoint": MOCK, "analyzer_id": "prebuilt-layout", "auth": "key"},
-        {"api_key": "mock-key"},
-        admin,
-    )
-    cfg.update_provider("search", "local", {"index": "hoken_chunks_demo"}, {}, admin)
+    missing = [k for k in ("llm", "embedding", "cu", "search") if not cfg.is_configured(k)]
+    if missing:
+        print(f"Thiếu cấu hình dịch vụ {missing}: nạp scripts/demo/demo.env trước (up.sh tự làm)", file=sys.stderr)
+        return 1
     if cfg.pipeline()[0] == 0:
         _, opts = cfg.pipeline()
         cfg.update_pipeline(opts.model_dump(mode="json"), admin)
@@ -245,14 +233,21 @@ def main() -> int:
             pl.delete_document(c, doc.id, admin)
         print("Đã xoá tài liệu cũ.")
 
-    print("1/5 auto — tự chạy hết tới index …")
-    upload(c, "akahon_sample_536-538_short.pdf", "赤本 P536–538（自動実行・索引済み）", "akahon", 536, reviewer, "auto")
+    print("1/4 index xong (người review đã duyệt hết) …")
+    d = upload(c, "akahon_sample_536-538_short.pdf", "赤本 P536–538", "akahon", 536, reviewer, "warn")
+    for _ in range(2):  # dừng ở OCR / チャンクレビュー thì duyệt hết như người review
+        hold = c.repo.get_doc(d.id).review_hold
+        if hold == "ocr":
+            pl.approve_all_pages(c, d.id, reviewer)
+        elif hold == "chunk":
+            pl.approve_all_chunks(c, d.id, reviewer)
+        drain(c)
 
-    print("2/5 warn — dừng ở OCR レビュー …")
+    print("2/4 dừng ở OCR レビュー …")
     d = upload(
         c,
         "midorihon_sample_372-375.pdf",
-        "緑本 P372–375（警告で停止・OCR レビュー）",
+        "緑本 P372–375",
         "midorihon",
         372,
         reviewer,
@@ -263,22 +258,15 @@ def main() -> int:
     else:
         print("  ! không dừng ở OCR (không có điểm yếu)")
 
-    print("3/5 warn — すべて承認 trang, dừng ở チャンクレビュー …")
-    d = upload(
-        c, "akahon_sample_536-543.pdf", "赤本 P536–543（警告で停止・チャンクレビュー）", "akahon", 536, reviewer, "warn"
-    )
+    print("3/4 すべて承認 trang, dừng ở チャンクレビュー …")
+    d = upload(c, "akahon_sample_536-543.pdf", "赤本 P536–543", "akahon", 536, reviewer, "warn")
     if d.review_hold == "ocr":
         pl.approve_all_pages(c, d.id, reviewer)
         drain(c)
     if c.repo.get_doc(d.id).review_hold != "chunk":
         print("  ! không dừng ở チャンクレビュー (không có chunk cần xem)")
 
-    print("4/5 manual — đang ở OCR レビュー …")
-    d = upload(c, "akahon_sample_536-538_short.pdf", "赤本 P536–538（手動承認）", "akahon", 536, reviewer, "manual")
-    for n in (1, 2):
-        pl.submit_page(c, d.id, n, reviewer)
-
-    print("5/5 manual — lỗi CU …")
+    print("4/4 lỗi 精密解析 …")
     original = jobs.STEPS["cu"]
 
     def cu_fails(ctx):
@@ -286,7 +274,7 @@ def main() -> int:
 
     jobs.STEPS["cu"] = jobs.StepDef("ai", cu_fails, 1)
     try:
-        d = upload(c, "akahon_sample_failed.pdf", "赤本 P600–601（CU エラー）", "akahon", 600, reviewer, "manual")
+        d = upload(c, "akahon_sample_failed.pdf", "赤本 P600–601", "akahon", 600, reviewer, "warn")
         for p in c.repo.list_pages(d.id):
             pl.set_route_override(c, d.id, p.page, "force_cu", reviewer)
         drain(c)

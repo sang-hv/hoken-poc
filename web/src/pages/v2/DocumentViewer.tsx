@@ -167,13 +167,14 @@ export default function DocumentViewerPage() {
     <div className="flex h-full min-h-[32rem] flex-col bg-background">
       <TopBar docId={docId} info={info.data} infoLoading={info.isLoading} tab={tab} onTab={onTab} />
 
-      {/* Dừng ở bước review (warn có cảnh báo / manual): popup ở tab パイプライン hỏi review hay すべて承認 */}
+      {/* Pipeline vừa dừng ở bước review khi đang xem tab パイプライン → popup hỏi review hay すべて承認 */}
       <ReviewPrompt doc={meta.data} canEdit={canEdit} onTab={onTab} onPipeline={tab === "pipeline"} />
-      {/* ...và banner ở tab review tương ứng — 検査 cho OCR, チャンク cho chunk */}
+      {/* Dải chờ review: tab パイプライン (mọi bước) + tab review tương ứng — 検査 cho OCR, チャンク cho chunk */}
       {meta.data &&
-        ((tab === "inspect" && reviewStage(meta.data) === "ocr") ||
+        (tab === "pipeline" ||
+          (tab === "inspect" && reviewStage(meta.data) === "ocr") ||
           (tab === "chunks" && reviewStage(meta.data) === "chunk")) && (
-          <ReviewGate doc={meta.data} canEdit={canEdit} variant="strip" />
+          <ReviewGate doc={meta.data} canEdit={canEdit} onTab={tab === "pipeline" ? onTab : undefined} />
         )}
       {processing && tab !== "pipeline" && !reviewStage(meta.data) && (
         <div role="status" className="flex shrink-0 items-center gap-2 border-b border-border bg-info-soft px-4 py-1.5 text-xs text-info">

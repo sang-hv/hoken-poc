@@ -48,7 +48,7 @@ python -m app.main serve | worker --queues docling,ai,light | job --queues ai --
 - Lỗi nghiệp vụ: `raise PipelineError("mã", **params)` → 409 `{detail: {code, ...}}`; UI dịch theo `errors.<mã>`.
 - Phân quyền: `Depends(viewer|reviewer|admin)`. Ghi thay đổi quan trọng vào audit: `c.repo.audit(...)`.
 - Mọi request ghi phải có header `X-Requested-With: hoken` (chống CSRF; cookie SameSite=Lax).
-- Secret không bao giờ trả về API — chỉ trả `secrets_set`.
+- Secret (lớp 2 đọc từ env) không bao giờ trả về API — chỉ trả cờ "đã đặt" (`set` / `secrets_set`).
 
 ## Test
 - `tests/conftest.py` có container in-memory và `make_pdf` (PDF có lớp text).

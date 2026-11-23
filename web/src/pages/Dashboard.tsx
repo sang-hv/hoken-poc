@@ -1,15 +1,15 @@
+/** Dashboard: dải số liệu (bấm được), danh sách tài liệu cần xử lý, panel trạng thái hệ thống dạng <dl>. */
 import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, ArrowRight, CheckCircle2, FileText, Layers, ListChecks, Loader2, ScanText, XCircle } from "lucide-react";
+import { ArrowRight, XCircle } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { Link, useNavigate } from "react-router-dom";
-import { PageHeader, StatCard } from "@/components/common";
-import { DocStatusBadge } from "@/components/status";
-import { docPageTotal, docProgress, useDocProgressLabel } from "@/components/docProgress";
-import { Badge, Button, Card, CardContent, CardHeader, CardTitle, EmptyState, Progress, Skeleton } from "@/components/ui";
+import { Link } from "react-router-dom";
+import { PageHeader } from "@/components/common";
+import { DocState, DocTitle, NextStep, STATUS_DOT } from "@/components/docRow";
+import { Skeleton } from "@/components/ui";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import type { Doc, DocStatus, Job } from "@/lib/types";
-import { fmtRelative } from "@/lib/utils";
+import type { Doc, DocStatus, Job, ProvidersResponse } from "@/lib/types";
+import { cn } from "@/lib/utils";
 
 interface Dash {
   documents: number;
@@ -32,173 +32,214 @@ const STAGES: DocStatus[] = [
   "indexed",
   "failed",
 ];
+const ACTION: DocStatus[] = ["failed", "ocr_review", "ready_for_chunking", "chunk_review"];
+
+/** Một ô của dải số liệu: nhãn nhỏ, số lớn, ghi chú. Có `to` → cả ô là link. */
+function Metric({ label, value, hint, to, tone }: { label: string; value: number; hint?: string; to?: string; tone?: "warning" }) {
+  const body = (
+    <>
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className={cn("mt-1 text-2xl font-semibold tabular-nums", tone === "warning" && value > 0 && "text-warning")}>{value}</p>
+      {hint && <p className="mt-0.5 text-xs text-danger">{hint}</p>}
+    </>
+  );
+  const cls = "block bg-card px-5 py-4";
+  return to ? (
+    <Link to={to} className={cn(cls, "transition-colors hover:bg-accent")}>
+      {body}
+    </Link>
+  ) : (
+    <div className={cls}>{body}</div>
+  );
+}
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="border-b border-border px-5 py-4 last:border-b-0">
+      <h2 className="mb-2 text-sm font-semibold">{title}</h2>
+      {children}
+    </section>
+  );
+}
+
+function Row({ label, children }: { label: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3 py-1 text-sm">
+      <dt className="min-w-0 text-muted-foreground">{label}</dt>
+      <dd className="shrink-0 tabular-nums">{children}</dd>
+    </div>
+  );
+}
 
 export default function DashboardPage() {
   const { t } = useTranslation();
-  const progressLabel = useDocProgressLabel();
-  const nav = useNavigate();
   const { can } = useAuth();
   const dash = useQuery({ queryKey: ["dashboard"], queryFn: () => api.get<Dash>("/dashboard"), refetchInterval: 5000 });
   const docs = useQuery({ queryKey: ["documents"], queryFn: () => api.get<Doc[]>("/documents"), refetchInterval: 5000 });
+  // Chỉ admin: lấy tên biến môi trường còn thiếu để hiện ngay trên dải cảnh báo
+  const providers = useQuery({
+    queryKey: ["providers"],
+    queryFn: () => api.get<ProvidersResponse>("/settings/providers"),
+    enabled: can("admin") && !!dash.data && Object.values(dash.data.configured).some((v) => !v),
+  });
+  // Chỉ admin: kết nối hạ tầng (DB / blob / queue) — chỉ hiện khi có lỗi
+  const sys = useQuery({
+    queryKey: ["system"],
+    queryFn: () => api.get<{ health: Record<string, { ok: boolean }> }>("/system"),
+    enabled: can("admin"),
+    refetchInterval: 30000,
+  });
+  const down = Object.entries(sys.data?.health ?? {}).filter(([, h]) => !h.ok).map(([k]) => k);
   const d = dash.data;
   const missing = d ? Object.entries(d.configured).filter(([, v]) => !v) : [];
+  const todo = (docs.data ?? [])
+    .filter((x) => ACTION.includes(x.status) || (x.stats.failed ?? 0) > 0)
+    .sort((a, b) => ACTION.indexOf(a.status) - ACTION.indexOf(b.status));
 
   return (
     <>
       <PageHeader title={t("dashboard.title")} subtitle={t("dashboard.subtitle")} />
-      {missing.length > 0 && can("admin") && (
-        <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-warning/40 bg-warning-soft/60 px-4 py-3">
-          <div className="flex items-center gap-2 text-sm">
-            <AlertTriangle className="size-4 text-warning" />
-            <span className="font-medium">{t("dashboard.setupHint")}</span>
-            <span className="text-muted-foreground">
-              {missing.map(([k]) => t(`settings.component.${k}`)).join(" · ")}
-            </span>
-          </div>
-          <Button size="sm" variant="outline" onClick={() => nav("/settings?tab=services")}>
-            {t("common.configure")}
-            <ArrowRight />
-          </Button>
+      {down.length > 0 && (
+        <div role="alert" className="mb-3 flex items-start gap-3 rounded-lg border border-danger/40 bg-danger-soft px-4 py-2.5 text-sm">
+          <span className="mt-2 size-1.5 shrink-0 rounded-full bg-danger" aria-hidden />
+          <p className="min-w-0">
+            <span className="font-medium">{t("dashboard.infraDown")}</span>
+            <span className="ml-2 font-mono text-xs uppercase text-muted-foreground">{down.join(" · ")}</span>
+          </p>
         </div>
       )}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {d ? (
-          <>
-            <StatCard label={t("dashboard.documents")} value={d.documents} icon={<FileText />} onClick={() => nav("/documents")} />
-            <StatCard
-              label={t("dashboard.pagesToReview")}
-              value={d.pages_to_review}
-              icon={<ScanText />}
-              tone="warning"
-              onClick={() => nav("/documents")}
-            />
-            <StatCard label={t("dashboard.chunksToReview")} value={d.chunks_to_review} icon={<Layers />} tone="violet" />
-            <StatCard
-              label={t("dashboard.runningJobs")}
-              value={(d.jobs.running ?? 0) + (d.jobs.queued ?? 0)}
-              icon={<Loader2 className={d.jobs.running ? "animate-spin" : ""} />}
-              tone="info"
-              hint={d.jobs.failed ? `${d.jobs.failed} ${t("jobStatus.failed")}` : undefined}
-              onClick={() => nav("/documents")}
-            />
-          </>
-        ) : (
-          Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-[88px] rounded-xl" />)
-        )}
-      </div>
-
-      <div className="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-3">
-        <Card className="xl:col-span-2">
-          <CardHeader className="flex-row items-center justify-between">
-            <CardTitle>{t("dashboard.recentDocs")}</CardTitle>
-            <Button variant="ghost" size="sm" onClick={() => nav("/documents")}>
-              {t("nav.documents")}
-              <ArrowRight />
-            </Button>
-          </CardHeader>
-          <CardContent className="pt-3">
-            {docs.data && docs.data.length === 0 && (
-              <EmptyState icon={<FileText />} title={t("documents.empty")} hint={t("documents.emptyHint")} />
-            )}
-            <ul className="divide-y divide-border">
-              {docs.data?.slice(0, 6).map((doc) => {
-                const total = docPageTotal(doc);
-                const p = docProgress(doc);
+      {missing.length > 0 && can("admin") && (
+        <div className="mb-6 flex items-start gap-3 rounded-lg border border-warning/40 bg-warning-soft px-4 py-2.5 text-sm">
+          <span className="mt-2 size-1.5 shrink-0 rounded-full bg-warning" aria-hidden />
+          <div className="min-w-0">
+            <p className="font-medium">{t("dashboard.setupHint")}</p>
+            <ul className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-muted-foreground">
+              {missing.map(([k]) => {
+                const env = providers.data?.components[k]?.error?.env;
                 return (
-                  <li key={doc.id}>
-                    <Link to={`/documents/${doc.id}`} className="flex items-center gap-4 py-3 hover:opacity-80">
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate font-medium">{doc.name}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {t("documents.bookPages", { from: doc.book_page_start, to: doc.book_page_start + total - 1 })} ·{" "}
-                          {fmtRelative(doc.updated_at)}
-                        </p>
-                      </div>
-                      <div className="hidden w-40 sm:block">
-                        <Progress value={p} tone={doc.status === "failed" ? "danger" : p === 100 ? "success" : "primary"} />
-                        <p className="mt-1 text-right text-[11px] text-muted-foreground">{progressLabel(doc)}</p>
-                      </div>
-                      <DocStatusBadge status={doc.status} />
-                    </Link>
+                  <li key={k}>
+                    {t(`settings.component.${k}`)}
+                    {env && <code className="ml-1.5 font-mono text-xs">{env}</code>}
                   </li>
                 );
               })}
             </ul>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
+      )}
 
-        <div className="flex flex-col gap-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>{t("dashboard.byStatus")}</CardTitle>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-2.5 pt-3">
-              {STAGES.map((s) => (
-                <div key={s} className="flex items-center justify-between">
-                  <DocStatusBadge status={s} />
-                  <span className="font-mono text-sm tabular-nums">{d?.documents_by_status[s] ?? 0}</span>
-                </div>
+      {d ? (
+        <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-border bg-border lg:grid-cols-4">
+          <Metric label={t("dashboard.documents")} value={d.documents} to="/documents" />
+          <Metric label={t("dashboard.pagesToReview")} value={d.pages_to_review} tone="warning" to="/documents?status=action" />
+          <Metric label={t("dashboard.chunksToReview")} value={d.chunks_to_review} tone="warning" to="/documents?status=action" />
+          <Metric
+            label={t("dashboard.runningJobs")}
+            value={(d.jobs.running ?? 0) + (d.jobs.queued ?? 0)}
+            hint={d.jobs.failed ? t("dashboard.failedCount", { n: d.jobs.failed }) : undefined}
+          />
+        </div>
+      ) : (
+        <Skeleton className="h-[92px] rounded-lg" />
+      )}
+
+      <div className="mt-6 grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
+        <section className="overflow-hidden rounded-lg border border-border bg-card">
+          <div className="flex h-11 items-center justify-between gap-3 border-b border-border px-4">
+            <h2 className="text-sm font-semibold">
+              {t("dashboard.needsAction")}
+              {todo.length > 0 && <span className="ml-2 font-normal tabular-nums text-muted-foreground">{todo.length}</span>}
+            </h2>
+            <Link to="/documents" className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline">
+              {t("dashboard.allDocs")}
+              <ArrowRight className="size-3.5" aria-hidden />
+            </Link>
+          </div>
+          {!docs.data ? (
+            <div className="space-y-3 p-4">
+              <Skeleton className="h-10" />
+              <Skeleton className="h-10" />
+            </div>
+          ) : todo.length === 0 ? (
+            <p className="px-4 py-8 text-center text-sm text-muted-foreground">{t("dashboard.noAction")}</p>
+          ) : (
+            <ul className="divide-y divide-border">
+              {todo.slice(0, 10).map((doc) => (
+                <li
+                  key={doc.id}
+                  className="grid grid-cols-1 gap-2 px-4 py-3 sm:grid-cols-[minmax(0,1fr)_13rem_auto] sm:items-center sm:gap-4"
+                >
+                  <DocTitle doc={doc} />
+                  <DocState doc={doc} />
+                  <div className="sm:justify-self-end">
+                    <NextStep doc={doc} />
+                  </div>
+                </li>
               ))}
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader>
-              <CardTitle>{t("dashboard.services")}</CardTitle>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-2 pt-3">
+            </ul>
+          )}
+        </section>
+
+        <aside className="overflow-hidden rounded-lg border border-border bg-card">
+          <Section title={t("dashboard.byStatus")}>
+            <dl>
+              {STAGES.map((s) => (
+                <Row
+                  key={s}
+                  label={
+                    <span className="flex items-center gap-2">
+                      <span className={cn("size-2 shrink-0 rounded-full", STATUS_DOT[s].replace("animate-pulse-dot", ""))} aria-hidden />
+                      {t(`docStatus.${s}`)}
+                    </span>
+                  }
+                >
+                  <span className={cn(!d?.documents_by_status[s] && "text-muted-foreground")}>{d?.documents_by_status[s] ?? 0}</span>
+                </Row>
+              ))}
+            </dl>
+          </Section>
+          <Section title={t("dashboard.services")}>
+            <dl>
               {d &&
                 Object.entries(d.configured).map(([k, v]) => (
-                  <div key={k} className="flex items-center justify-between text-sm">
-                    <span>{t(`settings.component.${k}`)}</span>
-                    {v ? (
-                      <Badge tone="success">
-                        <CheckCircle2 />
-                        {t("common.configured")}
-                      </Badge>
-                    ) : (
-                      <Badge tone="warning">{t("common.notConfigured")}</Badge>
-                    )}
-                  </div>
+                  <Row key={k} label={t(`settings.component.${k}`)}>
+                    <span className={v ? "text-muted-foreground" : "text-warning"}>
+                      {v ? t("dashboard.configured") : t("dashboard.notConfigured")}
+                    </span>
+                  </Row>
                 ))}
-              <div className="mt-2 border-t border-border pt-3">
-                <p className="mb-2 text-xs font-medium text-muted-foreground">{t("dashboard.queues")}</p>
-                <div className="flex flex-wrap gap-2">
-                  {d &&
-                    Object.entries(d.queues).map(([q, n]) => (
-                      <Badge key={q} tone={n > 0 ? "info" : "neutral"}>
-                        <ListChecks />
-                        {q}: {t("dashboard.queueDepth", { n })}
-                      </Badge>
-                    ))}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader>
-              <CardTitle>{t("dashboard.recentFailures")}</CardTitle>
-            </CardHeader>
-            <CardContent className="pt-3">
-              {d && d.recent_failed.length === 0 && (
-                <p className="text-sm text-muted-foreground">{t("dashboard.noFailures")}</p>
-              )}
-              <ul className="flex flex-col gap-2">
-                {d?.recent_failed.map((j) => (
-                  <li key={j.id}>
-                    <Link to={`/documents/${j.doc_id}?tab=pipeline`} className="flex items-start gap-2 text-sm hover:opacity-80">
-                      <XCircle className="mt-0.5 size-4 shrink-0 text-danger" />
-                      <span className="min-w-0">
-                        <span className="font-medium">{t(`steps.${j.step}`)}</span>
-                        {j.page ? ` · p${j.page}` : ""}
-                        <span className="block truncate text-xs text-muted-foreground">{j.error}</span>
+            </dl>
+          </Section>
+          <Section title={t("dashboard.queues")}>
+            <dl>
+              {d &&
+                Object.entries(d.queues).map(([q, n]) => (
+                  <Row key={q} label={<span className="font-mono text-xs">{q}</span>}>
+                    <span className={cn(!n && "text-muted-foreground")}>{t("dashboard.queueDepth", { n })}</span>
+                  </Row>
+                ))}
+            </dl>
+          </Section>
+          <Section title={t("dashboard.recentFailures")}>
+            {d && d.recent_failed.length === 0 && <p className="text-sm text-muted-foreground">{t("dashboard.noFailures")}</p>}
+            <ul className="flex flex-col gap-2.5">
+              {d?.recent_failed.map((j) => (
+                <li key={j.id}>
+                  <Link to={`/documents/${j.doc_id}?tab=pipeline`} className="group flex items-start gap-2 text-sm">
+                    <XCircle className="mt-0.5 size-4 shrink-0 text-danger" aria-hidden />
+                    <span className="min-w-0">
+                      <span className="font-medium group-hover:underline">{t(`steps.${j.step}`)}</span>
+                      {j.page ? <span className="text-muted-foreground"> · p{j.page}</span> : ""}
+                      <span className="block truncate text-xs text-muted-foreground" title={j.error}>
+                        {j.error}
                       </span>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </CardContent>
-          </Card>
-        </div>
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </Section>
+        </aside>
       </div>
     </>
   );

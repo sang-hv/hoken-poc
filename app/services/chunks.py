@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from app.core.text import nfkc
 from app.domain.models import Chunk, ChunkStatus, DocStatus
 from app.domain.options import ChunkOptions
@@ -177,8 +179,36 @@ PREVIEW_CHARS = 120
 LIST_MAX = 200
 
 
-def _preview(text: str) -> str:
-    one = " ".join(text.replace("|", " ").replace("#", " ").split())
+_COMMENT = re.compile(r"<!--.*?-->|```.*?(```|$)", re.S)  # chú thích HTML + khối code (mermaid…), kể cả chưa đóng
+# Token rác của markdown trong một dòng tóm tắt: dòng kẻ bảng (---, :---:), tiêu đề cột mặc định (列1), dấu đầu dòng.
+_NOISE = re.compile(r"^(:?-{3,}:?|列\d+|[-*•/])$")
+
+
+def _strip_prefix(s: str, prefix: str) -> str:
+    """Bỏ `prefix` ở đầu `s`, không tính khoảng trắng (văn bản hay viết "M017ポスト…" hoặc "M017 ポスト…")."""
+    want = "".join(prefix.split())
+    if not want or not "".join(s.split()).startswith(want):
+        return s
+    n = 0
+    for i, ch in enumerate(s):
+        if not ch.isspace():
+            n += 1
+            if n == len(want):
+                return s[i + 1 :].lstrip()
+    return s
+
+
+def _preview(text: str, item_code: str = "", title: str = "") -> str:
+    """Một dòng tóm tắt cho danh sách chunk: bỏ chú thích HTML, ký hiệu markdown / bảng, và mã mục + tiêu đề ở đầu
+    (đã hiện riêng trên dòng) để phần còn lại là nội dung phân biệt được các chunk."""
+    words = _COMMENT.sub(" ", text).replace("|", " ").replace("#", " ").split()
+    one = " ".join(w for w in words if not _NOISE.match(w))
+    for prefix in (item_code, title):
+        for p in dict.fromkeys((prefix, nfkc(prefix))):  # nguyên văn trước, rồi bản NFKC (（ ↔ (, Ｍ ↔ M)
+            stripped = _strip_prefix(one, p)
+            if stripped != one:
+                one = stripped
+                break
     return one[:PREVIEW_CHARS]
 
 
@@ -189,7 +219,7 @@ def chunk_summary(ch: Chunk, threshold: float) -> dict:
         "seq": ch.seq,
         "item_code": ch.item_code,
         "title": ch.title,
-        "preview": _preview(ch.text),
+        "preview": _preview(ch.text, ch.item_code, ch.title),
         "page_from": ch.page_from,
         "page_to": ch.page_to,
         "confidence": ch.confidence,

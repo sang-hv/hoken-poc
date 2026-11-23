@@ -22,17 +22,17 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Docling nặng (torch + model). Chỉ cài trong image worker-docling.
-docling = ["docling>=2.31"]
+# Parser (標準解析) nặng (torch / paddle + model). Chỉ cài trong image worker parser hoặc .venv-parser.
+docling = ["docling>=2.31", "easyocr>=1.7"]  # Docling mới không còn kèm EasyOCR (OCR tiếng Nhật)
+paddleocr = ["paddlepaddle>=3.0", "paddleocr[doc-parser]>=3.0"]
 azure = [
   "azure-identity>=1.17",
   "azure-cosmos>=4.7",
   "azure-storage-blob>=12.20",
   "azure-storage-queue>=12.10",
-  "azure-keyvault-secrets>=4.8",
 ]
 aws = ["boto3>=1.35"]
-dev = ["pytest>=8", "ruff>=0.6", "moto[dynamodb,s3,sqs,secretsmanager]>=5"]
+dev = ["pytest>=8", "ruff>=0.6", "moto[dynamodb,s3,sqs]>=5"]
 
 [tool.setuptools.packages.find]
 include = ["app*"]

@@ -68,14 +68,6 @@ class BlobStore(Protocol):
     def delete_prefix(self, prefix: str) -> None: ...
 
 
-# ------------------------------------------------------------------ secret
-@runtime_checkable
-class SecretStore(Protocol):
-    def set(self, name: str, value: str) -> None: ...
-    def get(self, name: str) -> str | None: ...
-    def delete(self, name: str) -> None: ...
-
-
 # ------------------------------------------------------------------ search
 @dataclass
 class IndexDoc:

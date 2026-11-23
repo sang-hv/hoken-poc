@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 from statistics import median
 from typing import Any
 
+from app.steps.parser import PARSER_ENGINES
 from app.steps.rules import HEADER_FOOTER, norm_text, parse_cu_source
 
 LABELS = (
@@ -754,7 +755,7 @@ def build_page_elements(
     els: list[dict] = []
     if cu_raw:
         els = from_cu(cu_raw, docling_meta)
-    if not els and (docling_meta or {}).get("engine") == "docling" and (docling_meta or {}).get("elements"):
+    if not els and (docling_meta or {}).get("engine") in PARSER_ENGINES and (docling_meta or {}).get("elements"):
         els = from_docling(docling_meta or {}, tokens or [], complex_tables)
     if not els:
         els = from_pdfium(tokens or [])

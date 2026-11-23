@@ -1,10 +1,11 @@
 # Chạy toàn bộ khu A trên máy dev hoặc một VM:
-#   cp .env.example .env    (sửa SECRET_MASTER_KEY, JWT_SECRET)
+#   cp .env.example .env    (sửa JWT_SECRET, điền LLM_* / EMBEDDING_* / CU_* / SEARCH_*)
 #   docker compose up -d --build
 #   mở http://localhost:8080  → màn Setup tạo admin đầu tiên
 #
 # Dev có hot reload cho UI:  docker compose --profile dev up web-dev   (http://localhost:5173)
-# Worker Docling dùng GPU (NVIDIA):  docker compose --profile gpu up -d worker-docling-gpu
+# Parser (標準解析) chọn bằng PARSER_TYPE trong .env (docling | paddleocr) — build đúng image tương ứng.
+# Worker parser dùng GPU (NVIDIA):  docker compose --profile gpu up -d worker-parser-gpu
 
 x-app: &app
   build: { context: ., dockerfile: docker/app.Dockerfile, target: base }
@@ -55,21 +56,21 @@ services:
     command: ["python", "-m", "app.main", "worker", "--queues", "ai"]
     deploy: { replicas: 2 }
 
-  # Docling CPU — nặng, image riêng (model tải sẵn lúc build)
-  worker-docling:
+  # Parser (Docling / PaddleOCR) CPU — nặng, image riêng theo PARSER_TYPE (model tải sẵn lúc build)
+  worker-parser:
     <<: *app
-    build: { context: ., dockerfile: docker/app.Dockerfile, target: docling }
-    image: hoken-docling:local
+    build: { context: ., dockerfile: docker/app.Dockerfile, target: "${PARSER_TYPE:-docling}" }
+    image: "hoken-${PARSER_TYPE:-docling}:local"
     command: ["python", "-m", "app.main", "worker", "--queues", "docling"]
     deploy:
       resources:
         limits: { memory: 6g }
 
-  worker-docling-gpu:
+  worker-parser-gpu:
     <<: *app
     profiles: ["gpu"]
-    build: { context: ., dockerfile: docker/app.Dockerfile, target: docling }
-    image: hoken-docling:local
+    build: { context: ., dockerfile: docker/app.Dockerfile, target: "${PARSER_TYPE:-docling}" }
+    image: "hoken-${PARSER_TYPE:-docling}:local"
     command: ["python", "-m", "app.main", "worker", "--queues", "docling"]
     deploy:
       resources:

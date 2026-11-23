@@ -33,6 +33,7 @@ export const vk = {
   text: (doc: string) => ["inspect", doc, "text"] as const,
   insights: (doc: string) => ["inspect", doc, "insights"] as const,
   quality: (doc: string) => ["inspect", doc, "quality"] as const,
+  recognition: (doc: string) => ["inspect", doc, "recognition"] as const,
   weak: (doc: string) => ["inspect", doc, "weak"] as const,
   elements: (doc: string, page: number) => ["inspect", doc, "elements", page] as const,
   raw: (doc: string, page: number, eid: string) => ["inspect", doc, "raw", page, eid] as const,

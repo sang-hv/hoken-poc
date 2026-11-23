@@ -1,10 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
-import { Bot, Database, Eraser, Headset, Loader2, Repeat, SendHorizontal, User } from "lucide-react";
+import { CornerDownLeft, Eraser, Headset, Loader2, Repeat, SendHorizontal } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
-import { Markdown, PageHeader, useErrorText } from "@/components/common";
-import { Badge, Button, Card, Select, Textarea } from "@/components/ui";
+import { Markdown, useErrorText } from "@/components/common";
+import { Button, Select } from "@/components/ui";
 import { api } from "@/lib/api";
 import type { SearchHit } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -45,7 +45,7 @@ function AnswerText({ text, onCite }: { text: string; onCite: (n: number) => voi
             key={i}
             type="button"
             onClick={() => onCite(Number(m[1]))}
-            className="mx-0.5 inline-flex h-5 min-w-5 items-center justify-center rounded-md bg-primary-soft px-1 align-text-top text-[11px] font-semibold text-primary hover:brightness-95"
+            className="mx-0.5 inline-flex min-w-5 cursor-pointer items-center justify-center rounded border border-primary/30 px-1 align-baseline text-xs font-medium tabular-nums text-primary hover:bg-primary-soft"
           >
             {m[1]}
           </button>
@@ -136,206 +136,212 @@ export default function ChatTestPage() {
   const sel = useMemo(() => msgs.find((m) => m.id === selected && m.result), [msgs, selected]);
 
   return (
-    <div className="flex flex-col lg:h-[calc(100dvh-3.5rem-3rem)]">
-      <PageHeader
-        title={t("chat.title")}
-        subtitle={t("chat.subtitle")}
-        actions={
-          <>
-            {status.data && (
-              <Badge tone={status.data.configured ? "primary" : "warning"}>
-                <Database />
-                {status.data.configured ? t("search.indexed", { n: status.data.count }) : t("common.notConfigured")}
-              </Badge>
-            )}
-            <Select
-              className="h-8 w-36 text-xs"
-              aria-label={t("search.topK")}
-              value={k || "default"}
-              onValueChange={(v) => setK(v === "default" ? "" : v)}
-              options={[
-                { value: "default", label: `${t("search.topK")}: ${t("chat.defaultK")}` },
-                ...["3", "5", "10"].map((v) => ({ value: v, label: `${t("search.topK")}: ${v}` })),
-              ]}
-            />
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={!msgs.length || busy}
-              onClick={() => {
-                setMsgs([]);
-                setSelected(null);
-              }}
-            >
-              <Eraser />
-              {t("chat.clear")}
-            </Button>
-          </>
-        }
-      />
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
+    <div className="flex h-full min-h-[32rem] flex-col">
+      {/* thanh trên của màn (màn chia ngăn: không dùng PageHeader) */}
+      <header className="flex min-h-12 shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-border bg-card px-4 py-2">
+        <h1 className="text-base font-semibold">{t("chat.title")}</h1>
+        {status.data && (
+          <span className={cn("text-xs", status.data.configured ? "text-muted-foreground" : "text-warning")}>
+            {status.data.configured ? t("search.indexed", { n: status.data.count }) : t("common.notConfigured")}
+          </span>
+        )}
+        <span className="flex-1" />
+        <Select
+          className="h-8 w-36 text-xs shadow-none"
+          aria-label={t("search.topK")}
+          value={k || "default"}
+          onValueChange={(v) => setK(v === "default" ? "" : v)}
+          options={[
+            { value: "default", label: `${t("search.topK")}: ${t("chat.defaultK")}` },
+            ...["3", "5", "10"].map((v) => ({ value: v, label: `${t("search.topK")}: ${v}` })),
+          ]}
+        />
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled={!msgs.length || busy}
+          onClick={() => {
+            setMsgs([]);
+            setSelected(null);
+          }}
+        >
+          <Eraser />
+          {t("chat.clear")}
+        </Button>
+      </header>
+
+      <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_26rem]">
         {/* Hội thoại */}
-        <Card className="flex min-h-[28rem] flex-col overflow-hidden">
-          <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto p-4" aria-live="polite">
-            {msgs.length === 0 && (
-              <div className="flex h-full flex-col items-center justify-center gap-4 py-10 text-center">
-                <div className="rounded-2xl bg-primary-soft p-3 text-primary">
-                  <Bot className="size-6" />
+        <section className="flex min-h-[28rem] min-w-0 flex-col lg:min-h-0">
+          <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto" aria-live="polite">
+            <div className="mx-auto flex max-w-2xl flex-col gap-6 px-6 py-6">
+              {msgs.length === 0 && (
+                <div className="py-6">
+                  <h2 className="text-base font-semibold">{t("chat.emptyTitle")}</h2>
+                  <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{t("chat.subtitle")}</p>
+                  <p className="mb-2 mt-6 text-xs text-muted-foreground">{t("chat.examples")}</p>
+                  <ul className="overflow-hidden rounded-lg border border-border">
+                    {EXAMPLES.map((ex) => (
+                      <li key={ex} className="border-b border-border last:border-b-0">
+                        <button
+                          type="button"
+                          onClick={() => send(ex)}
+                          className="flex w-full cursor-pointer items-center justify-between gap-3 bg-card px-4 py-2.5 text-left text-sm hover:bg-accent"
+                        >
+                          {ex}
+                          <SendHorizontal className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
-                <div>
-                  <p className="font-medium">{t("chat.emptyTitle")}</p>
-                  <p className="mt-1 text-sm text-muted-foreground">{t("chat.emptyHint")}</p>
-                </div>
-                <div className="flex flex-wrap justify-center gap-2">
-                  {EXAMPLES.map((ex) => (
-                    <Button key={ex} variant="secondary" size="sm" onClick={() => send(ex)}>
-                      {ex}
-                    </Button>
-                  ))}
-                </div>
-              </div>
-            )}
-            <ol className="flex flex-col gap-4">
+              )}
               {msgs.map((m) =>
                 m.role === "user" ? (
-                  <li key={m.id} className="flex justify-end gap-2">
-                    <div className="max-w-[80%] rounded-2xl rounded-tr-sm bg-primary px-3.5 py-2 text-sm text-primary-foreground">
-                      <p className="whitespace-pre-wrap break-words">{m.content}</p>
-                    </div>
-                    <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
-                      <User className="size-4" />
-                    </span>
-                  </li>
+                  <div key={m.id} className="flex justify-end">
+                    <p className="max-w-[80%] whitespace-pre-wrap break-words rounded-lg bg-muted px-3.5 py-2 text-sm">{m.content}</p>
+                  </div>
                 ) : (
-                  <li key={m.id} className="flex gap-2">
-                    <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary-soft text-primary">
-                      <Bot className="size-4" />
-                    </span>
-                    <div
-                      className={cn(
-                        "flex max-w-[85%] flex-col gap-2 rounded-2xl rounded-tl-sm border px-3.5 py-2.5",
-                        m.id === selected ? "border-primary/50 bg-card" : "border-border bg-muted/40",
-                      )}
-                    >
-                      {m.pending && (
-                        <span className="flex items-center gap-2 text-sm text-muted-foreground">
-                          <Loader2 className="size-4 animate-spin" />
-                          {t("chat.thinking")}
-                        </span>
-                      )}
-                      {m.error && <p className="text-sm text-danger">{m.error}</p>}
-                      {m.result && m.result.handoff && (
-                        <div className="flex items-start gap-2 rounded-lg bg-warning-soft/70 px-3 py-2 text-sm">
-                          <Headset className="mt-0.5 size-4 shrink-0 text-warning" />
-                          <span>
-                            <span className="font-medium">{t("chat.handoff")}</span>
-                            <span className="block text-xs text-muted-foreground">
-                              {t(`chat.reasons.${m.result.reason || "not_in_sources"}`)}
-                            </span>
-                          </span>
-                        </div>
-                      )}
-                      {m.result && !m.result.handoff && <AnswerText text={m.result.answer} onCite={(n) => cite(m, n)} />}
-                      {m.result && (
-                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
-                          <span className="tabular-nums">{t("chat.timing", m.result.ms)}</span>
-                          <button type="button" className="hover:text-foreground" onClick={() => setSelected(m.id)}>
-                            {t("chat.sourcesCount", { n: m.result.sources.length, cited: m.result.cited.length })}
-                          </button>
-                          <button
-                            type="button"
-                            className="inline-flex items-center gap-1 hover:text-foreground disabled:opacity-50"
-                            disabled={m.stability?.pending}
-                            onClick={() => checkStability(m)}
-                          >
-                            <Repeat className="size-3" />
-                            {t("chat.stabilityRun")}
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </li>
+                  <article
+                    key={m.id}
+                    className={cn(
+                      "flex flex-col gap-2 border-l-2 pl-4 transition-colors",
+                      m.id === selected && m.result ? "border-primary" : "border-transparent",
+                    )}
+                  >
+                    {m.pending && (
+                      <span className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <Loader2 className="size-4 animate-spin" />
+                        {t("chat.thinking")}
+                      </span>
+                    )}
+                    {m.error && <p className="text-sm text-danger">{m.error}</p>}
+                    {m.result && m.result.handoff && (
+                      <div className="text-sm">
+                        <p className="flex items-center gap-2 font-medium text-warning">
+                          <Headset className="size-4 shrink-0" aria-hidden />
+                          {t("chat.handoff")}
+                        </p>
+                        <p className="mt-0.5 text-muted-foreground">{t(`chat.reasons.${m.result.reason || "not_in_sources"}`)}</p>
+                      </div>
+                    )}
+                    {m.result && !m.result.handoff && <AnswerText text={m.result.answer} onCite={(n) => cite(m, n)} />}
+                    {m.result && (
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                        <span className="tabular-nums">{t("chat.timing", m.result.ms)}</span>
+                        <button type="button" className="cursor-pointer hover:text-foreground" onClick={() => setSelected(m.id)}>
+                          {t("chat.sourcesCount", { n: m.result.sources.length, cited: m.result.cited.length })}
+                        </button>
+                        <button
+                          type="button"
+                          className="inline-flex cursor-pointer items-center gap-1 hover:text-foreground disabled:opacity-50"
+                          disabled={m.stability?.pending}
+                          onClick={() => checkStability(m)}
+                        >
+                          <Repeat className="size-3" />
+                          {t("chat.stabilityRun")}
+                        </button>
+                      </div>
+                    )}
+                  </article>
                 ),
               )}
-            </ol>
+            </div>
           </div>
           <form
-            className="flex items-end gap-2 border-t border-border bg-card p-3"
+            className="shrink-0 px-4 pb-3 pt-2"
             onSubmit={(e) => {
               e.preventDefault();
               send();
             }}
           >
-            <Textarea
-              rows={2}
-              value={input}
-              maxLength={1000}
-              placeholder={t("chat.placeholder")}
-              aria-label={t("chat.placeholder")}
-              className="min-h-[2.75rem] flex-1 resize-none"
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-                  e.preventDefault();
-                  send();
-                }
-              }}
-            />
-            <Button type="submit" disabled={!input.trim() || busy} aria-label={t("chat.send")}>
-              <SendHorizontal />
-              <span className="hidden sm:inline">{t("chat.send")}</span>
-            </Button>
+            {/* Ô nhập kiểu chatbox: nút gửi (↵) nằm trong khung, góc phải */}
+            <div className="mx-auto flex max-w-2xl items-end gap-1 rounded-lg border border-input bg-background py-1 pl-3 pr-1 transition-[color,box-shadow] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50">
+              <textarea
+                rows={1}
+                value={input}
+                maxLength={1000}
+                placeholder={t("chat.placeholder")}
+                aria-label={t("chat.placeholder")}
+                className="field-sizing-content max-h-40 min-h-9 flex-1 resize-none bg-transparent py-2 text-sm outline-none placeholder:text-muted-foreground"
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                    e.preventDefault();
+                    send();
+                  }
+                }}
+              />
+              <Button
+                type="submit"
+                variant="ghost"
+                size="icon"
+                className="size-9 shrink-0 text-muted-foreground hover:text-foreground"
+                disabled={!input.trim() || busy}
+                aria-label={t("chat.send")}
+                title={t("chat.send")}
+              >
+                <CornerDownLeft />
+              </Button>
+            </div>
+            <p className="mx-auto mt-1.5 max-w-2xl text-xs text-muted-foreground">{t("chat.notSaved")}</p>
           </form>
-          <p className="border-t border-border bg-card px-3 py-1.5 text-[11px] text-muted-foreground">{t("chat.notSaved")}</p>
-        </Card>
+        </section>
 
         {/* Căn cứ của câu trả lời đang chọn */}
-        <Card className="flex min-h-[20rem] flex-col overflow-hidden">
-          <div className="border-b border-border px-4 py-3">
-            <p className="text-sm font-semibold">{t("chat.sources")}</p>
-            <p className="text-xs text-muted-foreground">{sel ? t("chat.sourcesHint") : t("chat.selectHint")}</p>
+        <aside className="flex min-h-[20rem] min-w-0 flex-col border-t border-border bg-card lg:min-h-0 lg:border-l lg:border-t-0">
+          <div className="shrink-0 border-b border-border px-4 py-3">
+            <h2 className="text-sm font-semibold">{t("chat.sources")}</h2>
+            <p className="mt-0.5 text-xs text-muted-foreground">{sel ? t("chat.sourcesHint") : t("chat.selectHint")}</p>
           </div>
-          <div className="min-h-0 flex-1 overflow-y-auto p-3">
+          <div className="min-h-0 flex-1 overflow-y-auto">
             {sel?.stability && (
-              <div className="mb-3 rounded-lg border border-border p-3">
-                <div className="mb-2 flex items-center justify-between gap-2">
-                  <p className="text-xs font-semibold">{t("chat.stability")}</p>
+              <section className="border-b border-border px-4 py-3">
+                <div className="mb-2 flex items-center justify-between gap-2 text-xs">
+                  <h3 className="font-semibold">{t("chat.stability")}</h3>
                   {sel.stability.pending ? (
                     <Loader2 className="size-4 animate-spin text-muted-foreground" />
                   ) : (
                     (() => {
                       const v = stabilityVerdict(sel.stability.runs);
-                      return <Badge tone={v === "stable" ? "success" : v === "unstable" ? "warning" : "danger"}>{t(`chat.verdict.${v}`)}</Badge>;
+                      return (
+                        <span
+                          className={cn(
+                            "font-medium",
+                            v === "stable" ? "text-success" : v === "unstable" ? "text-warning" : "text-danger",
+                          )}
+                        >
+                          {t(`chat.verdict.${v}`)}
+                        </span>
+                      );
                     })()
                   )}
                 </div>
-                <ol className="flex flex-col gap-1.5 text-xs">
+                <ol className="flex flex-col gap-2 text-xs">
                   {sel.stability.runs.map((r, i) => (
-                    <li key={i} className="rounded-md bg-muted/50 px-2 py-1.5">
-                      <span className="mr-1.5 font-mono text-muted-foreground">#{i + 1}</span>
+                    <li key={i} className="grid grid-cols-[1.5rem_minmax(0,1fr)] gap-1">
+                      <span className="tabular-nums text-muted-foreground">#{i + 1}</span>
                       {"error" in r ? (
                         <span className="text-danger">{r.error}</span>
                       ) : r.handoff ? (
                         <span className="text-warning">{t("chat.handoff")}</span>
                       ) : (
-                        <>
-                          {[...new Set(r.cited.map((n) => r.sources[n - 1]?.item_code).filter(Boolean))].map((c) => (
-                            <Badge key={c} tone="primary" className="mr-1 font-mono">
-                              {c}
-                            </Badge>
-                          ))}
+                        <span className="min-w-0">
+                          <span className="font-mono font-semibold">
+                            {[...new Set(r.cited.map((n) => r.sources[n - 1]?.item_code).filter(Boolean))].join(", ") || "—"}
+                          </span>
                           <span className="line-clamp-2 text-muted-foreground">{r.answer}</span>
-                        </>
+                        </span>
                       )}
                     </li>
                   ))}
                 </ol>
-              </div>
+              </section>
             )}
             {sel?.result && sel.result.sources.length === 0 && (
-              <p className="px-1 py-6 text-center text-sm text-muted-foreground">{t("chat.noSources")}</p>
+              <p className="px-4 py-6 text-center text-sm text-muted-foreground">{t("chat.noSources")}</p>
             )}
-            <ol className="flex flex-col gap-2">
+            <ol>
               {sel?.result?.sources.map((h, i) => {
                 const n = i + 1;
                 const cited = sel.result!.cited.includes(n);
@@ -344,32 +350,33 @@ export default function ChatTestPage() {
                     key={h.id}
                     id={`src-${sel.id}-${n}`}
                     className={cn(
-                      "rounded-lg border p-3 transition",
-                      cited ? "border-primary/50" : "border-border opacity-80",
-                      focusSource === n && "ring-2 ring-primary/40",
+                      "border-b border-border px-4 py-3 transition-colors",
+                      focusSource === n && "bg-primary-soft/40",
+                      !cited && "text-muted-foreground",
                     )}
                   >
-                    <div className="mb-2 flex flex-wrap items-center gap-1.5 text-xs">
-                      <span className="flex size-5 items-center justify-center rounded-md bg-primary-soft font-semibold text-primary">{n}</span>
-                      <Badge tone="primary" className="font-mono">
-                        {h.item_code || "—"}
-                      </Badge>
-                      {cited && <Badge tone="success">{t("chat.cited")}</Badge>}
-                      <span className="ml-auto font-mono text-muted-foreground">{h.score.toFixed(3)}</span>
+                    <div className="flex items-baseline gap-2 text-xs">
+                      <span className="w-4 shrink-0 font-semibold tabular-nums">{n}</span>
+                      {h.item_code && <span className="font-mono font-semibold text-foreground">{h.item_code}</span>}
+                      {cited && <span className="font-medium text-primary">{t("chat.cited")}</span>}
+                      <span className="ml-auto font-mono tabular-nums text-muted-foreground">{h.score.toFixed(3)}</span>
                     </div>
-                    <Link to={`/documents/${h.doc_id}`} className="text-xs font-medium hover:text-primary">
+                    <Link
+                      to={`/documents/${h.doc_id}`}
+                      className="mt-0.5 block pl-6 text-xs text-muted-foreground hover:text-primary hover:underline"
+                    >
                       {h.doc_name} · P{h.page_from}
                       {h.page_to !== h.page_from ? `–${h.page_to}` : ""}
                     </Link>
-                    <div className="mt-2 max-h-40 overflow-auto rounded-md bg-muted/50 p-2 text-xs">
-                      <Markdown text={h.content} />
+                    <div className="ml-6 mt-2 max-h-40 overflow-auto rounded-md bg-muted/50 px-3 py-2">
+                      <Markdown text={h.content} className="prose-compact" />
                     </div>
                   </li>
                 );
               })}
             </ol>
           </div>
-        </Card>
+        </aside>
       </div>
     </div>
   );

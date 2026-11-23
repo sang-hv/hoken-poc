@@ -267,19 +267,37 @@ export function Select({
 
 /* ---------------------------------------------------------------- Tabs */
 export const Tabs = TabsPrimitive.Root;
-export function TabsList({ className, ...p }: React.ComponentProps<typeof TabsPrimitive.List>) {
+/** `segmented` (mặc định): nhóm nút nền xám — cho bộ chuyển nhỏ trong panel. `line`: gạch chân — cho tab cấp trang. */
+type TabsVariant = "segmented" | "line";
+const TabsVariantCtx = React.createContext<TabsVariant>("segmented");
+export function TabsList({
+  className,
+  variant = "segmented",
+  ...p
+}: React.ComponentProps<typeof TabsPrimitive.List> & { variant?: TabsVariant }) {
   return (
-    <TabsPrimitive.List
-      className={cn("inline-flex items-center gap-1 rounded-lg bg-muted p-1 text-muted-foreground", className)}
-      {...p}
-    />
+    <TabsVariantCtx.Provider value={variant}>
+      <TabsPrimitive.List
+        className={cn(
+          variant === "line"
+            ? "flex items-center gap-5 border-b border-border text-muted-foreground"
+            : "inline-flex items-center gap-1 rounded-lg bg-muted p-1 text-muted-foreground",
+          className,
+        )}
+        {...p}
+      />
+    </TabsVariantCtx.Provider>
   );
 }
 export function TabsTrigger({ className, ...p }: React.ComponentProps<typeof TabsPrimitive.Trigger>) {
+  const variant = React.useContext(TabsVariantCtx);
   return (
     <TabsPrimitive.Trigger
       className={cn(
-        "inline-flex cursor-pointer items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition data-[state=active]:bg-card data-[state=active]:text-foreground data-[state=active]:shadow-card hover:text-foreground [&_svg]:size-4",
+        "inline-flex cursor-pointer items-center gap-1.5 text-sm font-medium transition hover:text-foreground [&_svg]:size-4",
+        variant === "line"
+          ? "-mb-px border-b-2 border-transparent pb-2.5 pt-1 data-[state=active]:border-primary data-[state=active]:text-foreground"
+          : "rounded-md px-3 py-1.5 data-[state=active]:bg-card data-[state=active]:text-foreground data-[state=active]:shadow-card",
         className,
       )}
       {...p}
@@ -287,6 +305,56 @@ export function TabsTrigger({ className, ...p }: React.ComponentProps<typeof Tab
   );
 }
 export const TabsContent = TabsPrimitive.Content;
+
+/* ---------------------------------------------------------------- FilterChips
+ * Bộ lọc một lựa chọn dạng chip (mọi danh sách dùng cùng kiểu — xem web/DESIGN.md). */
+export function FilterChips<T extends string>({
+  value,
+  onChange,
+  options,
+  label,
+  className,
+}: {
+  value: T;
+  onChange: (v: T) => void;
+  options: { value: T; label: React.ReactNode; count?: number; tone?: "warning" | "danger" }[];
+  label: string;
+  className?: string;
+}) {
+  return (
+    <div role="radiogroup" aria-label={label} className={cn("flex flex-wrap items-center gap-1", className)}>
+      {options.map((o) => {
+        const on = value === o.value;
+        return (
+          <button
+            key={o.value}
+            type="button"
+            role="radio"
+            aria-checked={on}
+            onClick={() => onChange(o.value)}
+            className={cn(
+              "inline-flex cursor-pointer items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium transition",
+              on ? "border-primary bg-primary-soft text-primary" : "border-border text-muted-foreground hover:bg-accent hover:text-foreground",
+            )}
+          >
+            {o.label}
+            {o.count !== undefined && (
+              <span
+                className={cn(
+                  "tabular-nums",
+                  !on && o.count > 0 && o.tone === "warning" && "text-warning",
+                  !on && o.count > 0 && o.tone === "danger" && "text-danger",
+                )}
+              >
+                {o.count}
+              </span>
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 /* ---------------------------------------------------------------- Dialog */
 export function Dialog({
@@ -311,6 +379,14 @@ export function Dialog({
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay className="fixed inset-0 z-40 bg-black/40 backdrop-blur-[2px]" />
         <DialogPrimitive.Content
+          // Phần tử có `data-autofocus` (thường là nút chính) nhận focus khi mở, thay vì nút ✕ đầu tiên.
+          onOpenAutoFocus={(e) => {
+            const el = (e.currentTarget as HTMLElement | null)?.querySelector<HTMLElement>("[data-autofocus]");
+            if (el) {
+              e.preventDefault();
+              el.focus();
+            }
+          }}
           className={cn(
             "fixed left-1/2 top-1/2 z-50 flex max-h-[90vh] w-[calc(100vw-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 flex-col rounded-2xl border border-border bg-card shadow-2xl outline-none",
             className,

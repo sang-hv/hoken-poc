@@ -2,6 +2,7 @@
 *.env.local
 __pycache__/
 .venv/
+.venv-parser/
 out/
 report/
 retrieval_report.csv

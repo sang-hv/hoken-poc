@@ -5,9 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from functools import lru_cache
 
-from app.adapters.registry import make_blob, make_queue, make_secrets, make_store
+from app.adapters.registry import make_blob, make_queue, make_store
 from app.core.settings import BootstrapSettings, get_settings
-from app.ports import BlobStore, Queue, SecretStore
+from app.ports import BlobStore, Queue
 from app.services.config_service import ConfigService
 from app.services.repo import Repo
 
@@ -18,21 +18,19 @@ class Container:
     repo: Repo
     queue: Queue
     blob: BlobStore
-    secrets: SecretStore
     config: ConfigService
 
     @classmethod
-    def build(cls, settings: BootstrapSettings, *, store=None, queue=None, blob=None, secrets=None) -> Container:
+    def build(cls, settings: BootstrapSettings, *, store=None, queue=None, blob=None, env=None) -> Container:
+        """`env`: nguồn biến môi trường cho lớp 2 (mặc định os.environ; test truyền dict)."""
         store = store or make_store(settings)
         repo = Repo(store)
-        secrets = secrets or make_secrets(settings, store)
         return cls(
             settings=settings,
             repo=repo,
             queue=queue or make_queue(settings, store),
             blob=blob or make_blob(settings),
-            secrets=secrets,
-            config=ConfigService(repo, secrets, settings.app_env),
+            config=ConfigService(repo, settings.app_env, env),
         )
 
 

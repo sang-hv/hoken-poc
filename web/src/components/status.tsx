@@ -69,20 +69,6 @@ export function JobStatusBadge({ status }: { status: JobStatus }) {
   );
 }
 
-const GRADE_TONE: Record<string, Tone> = {
-  poor: "danger",
-  fair: "warning",
-  good: "info",
-  excellent: "success",
-  unspecified: "neutral",
-};
-
-export function GradeBadge({ grade }: { grade: string }) {
-  const { t } = useTranslation();
-  const g = (grade || "unspecified").toLowerCase();
-  return <Badge tone={GRADE_TONE[g] ?? "neutral"}>{t(`grades.${g}`, { defaultValue: g })}</Badge>;
-}
-
 export function RouteBadge({ route }: { route: "easy" | "hard" | null }) {
   const { t } = useTranslation();
   if (!route) return <Badge tone="neutral"><CircleDashed />—</Badge>;

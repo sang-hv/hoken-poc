@@ -113,6 +113,25 @@ def main(argv: list[str] | None = None) -> int:
                 f"  p{pg.page:>4} (sách {pg.book_page}) {pg.status.value:<9} {pg.route or '-':<5} "
                 f"low={pg.scores.low_grade:<11} {','.join(pg.route_reasons)}"
             )
+        from app.services import inspect as insp
+
+        r = insp.recognition_summary(c, doc.id, build=False)
+        n = r["elements"]
+
+        def pct(k: int) -> str:
+            return f"{100 * k / n:5.1f}%" if n else "    —"
+
+        cur, ini = r["current"], r["initial"]
+        failed, pending = r["pages_failed"] or "-", r["pages_pending"] or "-"
+        print(f"認識結果 (phần tử nội dung: {n}; trang lỗi: {failed}; chưa xong: {pending})")
+        print(
+            f"  hiện tại   良好 {pct(cur['good'] + cur['fixed'])} (trong đó 修正・確認 {pct(cur['fixed'])})"
+            f"  要確認 {pct(cur['weak'])}  未認識 {pct(cur['unread'])}"
+        )
+        print(
+            f"  máy đọc    良好 {pct(ini['good'])}  要確認 {pct(ini['weak'])}  未認識 {pct(ini['unread'])}"
+            + (f"  (ước tính {r['estimated']} phần tử)" if r["estimated"] else "")
+        )
         return 0
     return 1
 

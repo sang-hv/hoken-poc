@@ -125,20 +125,6 @@ class MemoryBlob:
             del self.data[k]
 
 
-class MemorySecrets:
-    def __init__(self):
-        self.data: dict[str, str] = {}
-
-    def set(self, name, value):
-        self.data[name] = value
-
-    def get(self, name):
-        return self.data.get(name)
-
-    def delete(self, name):
-        self.data.pop(name, None)
-
-
 class MemorySearch:
     def __init__(self):
         self.docs: dict[str, IndexDoc] = {}

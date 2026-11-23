@@ -15,6 +15,8 @@ Kiểm tra bằng Playwright (Chromium có sẵn): đi hết luồng Setup → u
 sáng và tối (`localStorage hoken.lang`, `hoken.theme`), và không được có lỗi console.
 
 ## Bắt buộc
+- Chữ hiển thị trạng thái phải khớp định nghĩa ở `docs/STATUS.md` (đổi định nghĩa → sửa cả hai).
+- **Đọc `web/DESIGN.md` trước khi làm giao diện** (bố cục chia ngăn, thang chữ, khi nào dùng badge / banner / modal).
 - **Mọi chữ hiển thị đi qua `t()`** và có ở cả `src/i18n/en.ts` và `src/i18n/ja.ts` (ja dùng kiểu `Messages` của en nên
   thiếu khoá là lỗi TypeScript). Không viết chuỗi cứng trong JSX.
 - Màu dùng token (`bg-primary`, `text-muted-foreground`, `bg-warning-soft`...) định nghĩa trong `src/index.css`
@@ -35,7 +37,14 @@ sáng và tối (`localStorage hoken.lang`, `hoken.theme`), và không được 
 - Review OCR ở tab **検査** (`components/v2/viewer/InspectTab.tsx`): ảnh trang + khung phần tử, sửa / AI đọc lại
   từng phần tử; tài liệu duyệt tay có `PageApproval` (「このページを承認」, Ctrl/⌘+Enter → sang trang chưa duyệt kế tiếp,
   「承認を取り消す」). `/documents/:id/review` chuyển tới trang chưa duyệt đầu tiên; link cũ `/pages/:n` → tab 検査.
-- Review chunk ở tab **チャンク** (`ChunksTab.tsx`): lọc 要確認, sửa, tách tại con trỏ, gộp với chunk sau, duyệt;
-  popup 原本と比較 tô vùng của chunk trên trang gốc. Link cũ `/chunks` → tab チャンク.
-- `ReviewGate`: nhắc review ở tab パイプライン + tab review tương ứng; 「すべて承認」 chỉ chạy sau popup xác nhận (ghi
-  audit, người duyệt = người bấm) rồi chạy luôn bước sau.
+- Review chunk ở tab **チャンク** (`ChunksTab.tsx`): danh sách | nội dung | ngăn 原本 (`ChunkSourcePane`, tô vùng của
+  chunk trên trang gốc). Lọc 要確認, sửa, tách tại con trỏ, gộp với chunk sau; 「承認して次へ」 (Ctrl/⌘+Enter), J/K đổi
+  chunk. Thanh thao tác (kể cả 保存 khi đang sửa) luôn ở trên. Link cũ `/chunks` → tab チャンク.
+- Tab **パイプライン** (`PipelineTab.tsx`): dải 8 bước ở trên (là tiêu đề tab), dải thao tác chỉ khi có việc (chạy lại
+  trang lỗi / thử chat), dưới là 3 ngăn **rộng bằng nhau** 情報 | 認識結果 | 要対応ページ dựng bằng `viewer/pane.tsx`
+  (cùng thanh tiêu đề h-10, cùng dòng h-9 kẻ dưới → thẳng hàng). Màn ≥ 1024px vừa một màn, chỉ ngăn dài tự cuộn.
+  Bấm dòng 良好 / 要確認 / 未認識 / 計 ở 認識結果 → ngăn phải lọc đúng các trang đó (bấm lại / ✕ → về 要対応ページ);
+  mỗi trang mở tab 検査 ở trang đó.
+- `ReviewGate`: dải banner một dòng dưới thanh trên ở tab パイプライン + tab review tương ứng. `ReviewPrompt` chỉ bật
+  popup khi pipeline vừa dừng ở bước review lúc đang xem tab パイプライン (không bật khi mở / tải lại màn).
+  「すべて承認」 chỉ chạy sau hộp xác nhận (ghi audit, người duyệt = người bấm) rồi chạy luôn bước sau.

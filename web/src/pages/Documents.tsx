@@ -1,29 +1,25 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { FileText, FileUp, MoreHorizontal, Pencil, Search, Trash2, Upload, X } from "lucide-react";
+import { Eye, EyeOff, FileText, FileUp, MoreHorizontal, Pencil, Search, Trash2, Upload, X } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { ConfirmDialog, PageHeader, Pagination, useToastError } from "@/components/common";
-import { DocStatusBadge } from "@/components/status";
-import { docPageTotal, docProgress, NextAction, useDocProgressLabel } from "@/components/docProgress";
+import { DocState, DocTitle, NextStep } from "@/components/docRow";
 import {
-  Badge,
   Button,
-  Card,
   Dialog,
   Dropdown,
   DropdownContent,
   DropdownItem,
+  DropdownSeparator,
   DropdownTrigger,
   EmptyState,
   Field,
+  FilterChips,
   Input,
-  Progress,
   Select,
   Skeleton,
-  Switch,
-  Tip,
 } from "@/components/ui";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
@@ -167,54 +163,17 @@ export function UploadDialog({ open, onOpenChange }: { open: boolean; onOpenChan
   );
 }
 
-function DocTitle({ doc }: { doc: Doc }) {
-  const { t } = useTranslation();
-  const total = docPageTotal(doc);
-  return (
-    <div className="min-w-0">
-      <Link to={`/documents/${doc.id}`} className="font-medium break-words hover:text-primary">
-        {doc.name}
-      </Link>
-      <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground">
-        <Badge>{t(`kinds.${doc.kind}`, { defaultValue: doc.kind })}</Badge>
-        <span className="whitespace-nowrap">{t("documents.pageCount", { count: total })}</span>
-        <span>·</span>
-        <span className="whitespace-nowrap">
-          {t("documents.bookPages", { from: doc.book_page_start, to: doc.book_page_start + total - 1 })}
-        </span>
-      </p>
-      <p className="mt-0.5 truncate text-xs text-muted-foreground" title={doc.filename}>
-        {doc.filename}
-      </p>
-    </div>
-  );
-}
-
-function DocProgressBar({ doc }: { doc: Doc }) {
-  const label = useDocProgressLabel();
-  const p = docProgress(doc);
-  return (
-    <div>
-      <Progress value={p} tone={doc.status === "failed" ? "danger" : p === 100 ? "success" : "primary"} />
-      <p className="mt-1 whitespace-nowrap text-[11px] text-muted-foreground">{label(doc)}</p>
-    </div>
-  );
-}
-
-function EnabledSwitch({ doc, onToggle }: { doc: Doc; onToggle: (enabled: boolean) => void }) {
-  const { t } = useTranslation();
-  const { can } = useAuth();
-  return (
-    <Switch
-      checked={doc.enabled}
-      disabled={!can("reviewer")}
-      onCheckedChange={onToggle}
-      aria-label={t("common.enabled")}
-    />
-  );
-}
-
-function RowMenu({ doc, onRename, onDelete }: { doc: Doc; onRename: (d: Doc) => void; onDelete: (d: Doc) => void }) {
+function RowMenu({
+  doc,
+  onRename,
+  onDelete,
+  onEnabled,
+}: {
+  doc: Doc;
+  onRename: (d: Doc) => void;
+  onDelete: (d: Doc) => void;
+  onEnabled: (d: Doc, enabled: boolean) => void;
+}) {
   const { t } = useTranslation();
   const { can } = useAuth();
   if (!can("reviewer")) return null;
@@ -230,11 +189,18 @@ function RowMenu({ doc, onRename, onDelete }: { doc: Doc; onRename: (d: Doc) => 
           <Pencil />
           {t("common.rename")}
         </DropdownItem>
+        <DropdownItem onSelect={() => onEnabled(doc, !doc.enabled)}>
+          {doc.enabled ? <EyeOff /> : <Eye />}
+          {doc.enabled ? t("documents.disable") : t("documents.enable")}
+        </DropdownItem>
         {can("admin") && (
-          <DropdownItem className="text-danger" onSelect={() => onDelete(doc)}>
-            <Trash2 />
-            {t("common.delete")}
-          </DropdownItem>
+          <>
+            <DropdownSeparator />
+            <DropdownItem className="text-danger [&_svg]:text-danger" onSelect={() => onDelete(doc)}>
+              <Trash2 />
+              {t("common.delete")}
+            </DropdownItem>
+          </>
         )}
       </DropdownContent>
     </Dropdown>
@@ -340,12 +306,18 @@ export default function DocumentsPage() {
   };
   const [toDelete, setToDelete] = useState<Doc | null>(null);
   const [toRename, setToRename] = useState<Doc | null>(null);
+  const [toDisable, setToDisable] = useState<Doc | null>(null);
   const docs = useQuery({ queryKey: ["documents"], queryFn: () => api.get<Doc[]>("/documents"), refetchInterval: 4000 });
   const toggle = useMutation({
     mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) => api.patch(`/documents/${id}`, { enabled }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["documents"] }),
+    onSuccess: () => {
+      toast.success(t("common.saved"));
+      qc.invalidateQueries({ queryKey: ["documents"] });
+    },
     onError: toastError,
   });
+  // Tắt (loại khỏi tìm kiếm) phải xác nhận; bật lại thì làm luôn
+  const setEnabled = (d: Doc, enabled: boolean) => (enabled ? toggle.mutate({ id: d.id, enabled }) : setToDisable(d));
   const all = useMemo(() => docs.data ?? [], [docs.data]);
   const list = useMemo(() => {
     const needle = filter.trim().toLowerCase();
@@ -359,6 +331,7 @@ export default function DocumentsPage() {
   const paged = useClientPage(list, pageNo, PAGE_SIZE);
   const filtered = !!filter || group !== "all" || kind !== "all";
   const groups: StatusGroup[] = ["all", "action", "running", "indexed", "failed"];
+  const menu = (d: Doc) => <RowMenu doc={d} onRename={setToRename} onDelete={setToDelete} onEnabled={setEnabled} />;
 
   return (
     <>
@@ -374,28 +347,33 @@ export default function DocumentsPage() {
           )
         }
       />
-      <Card>
-        <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-3">
-          <Input
-            type="search"
-            placeholder={t("documents.searchPlaceholder")}
-            aria-label={t("documents.searchPlaceholder")}
-            value={filter}
-            onChange={(e) => setParam("q", e.target.value)}
-            className="w-full sm:max-w-xs sm:flex-1"
-          />
-          <Select
-            className="w-[calc(50%-0.25rem)] sm:w-52"
-            aria-label={t("common.status")}
+      <div className="overflow-hidden rounded-lg border border-border bg-card">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border px-4 py-3">
+          <div className="relative w-full sm:w-64">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              type="search"
+              placeholder={t("documents.searchPlaceholder")}
+              aria-label={t("documents.searchPlaceholder")}
+              value={filter}
+              onChange={(e) => setParam("q", e.target.value)}
+              className="h-8 pl-8 shadow-none"
+            />
+          </div>
+          <FilterChips
+            label={t("common.status")}
             value={group}
-            onValueChange={(v) => setParam("status", v, "all")}
+            onChange={(g) => setParam("status", g, "all")}
             options={groups.map((g) => ({
               value: g,
-              label: g === "all" ? t("documents.groups.all") : `${t(`documents.groups.${g}`)} (${all.filter((d) => inGroup(d, g)).length})`,
+              label: g === "all" ? t("documents.groups.allShort") : t(`documents.groups.${g}`),
+              count: all.filter((d) => inGroup(d, g)).length,
+              tone: g === "action" ? "warning" : g === "failed" ? "danger" : undefined,
             }))}
           />
+          <span className="hidden flex-1 sm:block" />
           <Select
-            className="w-[calc(50%-0.25rem)] sm:w-44"
+            className="h-8 w-full shadow-none sm:w-40"
             aria-label={t("documents.kind")}
             value={kind}
             onValueChange={(v) => setParam("kind", v, "all")}
@@ -423,7 +401,7 @@ export default function DocumentsPage() {
             icon={<Search />}
             title={t("common.noMatch")}
             action={
-              <Button variant="soft" onClick={() => setParams({}, { replace: true })}>
+              <Button variant="outline" onClick={() => setParams({}, { replace: true })}>
                 <X />
                 {t("common.clearFilters")}
               </Button>
@@ -437,7 +415,7 @@ export default function DocumentsPage() {
             hint={t("documents.emptyHint")}
             action={
               can("reviewer") && (
-                <Button variant="soft" onClick={() => setOpen(true)}>
+                <Button onClick={() => setOpen(true)}>
                   <Upload />
                   {t("documents.upload")}
                 </Button>
@@ -447,86 +425,68 @@ export default function DocumentsPage() {
         )}
         {list.length > 0 && (
           <>
-            {/* xl+: bảng (dưới xl nội dung còn < ~980px, bảng 7 cột bị ép) */}
-            <div className="hidden overflow-x-auto xl:block">
+            {/* lg+: bảng 5 cột */}
+            <div className="hidden lg:block">
               <table className="w-full text-sm">
                 <thead className="text-left text-xs text-muted-foreground">
                   <tr className="border-b border-border">
-                    <th className="px-4 py-2.5 font-medium">{t("common.name")}</th>
-                    <th className="px-3 py-2.5 font-medium">{t("common.status")}</th>
-                    <th className="w-44 px-3 py-2.5 font-medium">{t("documents.progress")}</th>
-                    <th className="px-3 py-2.5 font-medium">{t("documents.nextStep")}</th>
-                    <th className="px-3 py-2.5 font-medium">
-                      <Tip content={t("documents.enabledHint")}>
-                        <span>{t("common.enabled")}</span>
-                      </Tip>
-                    </th>
-                    <th className="whitespace-nowrap px-3 py-2.5 font-medium">{t("common.updated")}</th>
-                    <th />
+                    <th className="px-4 py-2 font-medium">{t("common.name")}</th>
+                    <th className="w-56 px-3 py-2 font-medium">{t("common.status")}</th>
+                    <th className="w-52 px-3 py-2 font-medium">{t("documents.nextStep")}</th>
+                    <th className="w-28 whitespace-nowrap px-3 py-2 font-medium">{t("common.updated")}</th>
+                    <th className="w-12" />
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-border">
+                <tbody>
                   {paged.items.map((d) => (
-                    <tr key={d.id} className="hover:bg-accent/40">
-                      <td className="min-w-56 px-4 py-3">
+                    <tr key={d.id} className="border-b border-border last:border-b-0 hover:bg-accent/40">
+                      <td className="px-4 py-2.5">
                         <DocTitle doc={d} />
                       </td>
-                      <td className="px-3 py-3">
-                        <DocStatusBadge status={d.status} />
+                      <td className="px-3 py-2.5">
+                        <DocState doc={d} />
                       </td>
-                      <td className="min-w-40 px-3 py-3">
-                        <DocProgressBar doc={d} />
+                      <td className="px-3 py-2.5">
+                        <NextStep doc={d} />
                       </td>
-                      <td className="px-3 py-3">
-                        <NextAction doc={d} />
-                      </td>
-                      <td className="px-3 py-3">
-                        <EnabledSwitch doc={d} onToggle={(enabled) => toggle.mutate({ id: d.id, enabled })} />
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-3 text-muted-foreground">{fmtRelative(d.updated_at)}</td>
-                      <td className="px-2 py-3 text-right">
-                        <RowMenu doc={d} onRename={setToRename} onDelete={setToDelete} />
-                      </td>
+                      <td className="whitespace-nowrap px-3 py-2.5 text-xs text-muted-foreground">{fmtRelative(d.updated_at)}</td>
+                      <td className="px-2 py-2.5 text-right">{menu(d)}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
-            {/* < xl: mỗi tài liệu một khối; từ sm chia 2 cột (thông tin | tiến độ + việc tiếp theo) */}
-            <ul className="divide-y divide-border xl:hidden">
+            {/* < lg: mỗi tài liệu một khối gọn */}
+            <ul className="divide-y divide-border lg:hidden">
               {paged.items.map((d) => (
-                <li key={d.id} className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-start sm:gap-6">
-                  <div className="flex min-w-0 flex-1 flex-col gap-2">
-                    <div className="flex items-start justify-between gap-3">
-                      <DocTitle doc={d} />
-                      <span className="sm:hidden">
-                        <RowMenu doc={d} onRename={setToRename} onDelete={setToDelete} />
-                      </span>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <DocStatusBadge status={d.status} />
-                      <span className="text-xs text-muted-foreground">{fmtRelative(d.updated_at)}</span>
-                    </div>
+                <li key={d.id} className="flex flex-col gap-2 px-4 py-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <DocTitle doc={d} />
+                    {menu(d)}
                   </div>
-                  <div className="flex flex-col gap-2.5 sm:w-64 sm:shrink-0">
-                    <DocProgressBar doc={d} />
-                    <div className="flex items-center justify-between gap-3">
-                      <NextAction doc={d} />
-                      <EnabledSwitch doc={d} onToggle={(enabled) => toggle.mutate({ id: d.id, enabled })} />
-                    </div>
+                  <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+                    <DocState doc={d} />
+                    <NextStep doc={d} />
                   </div>
-                  <span className="hidden sm:block">
-                    <RowMenu doc={d} onRename={setToRename} onDelete={setToDelete} />
-                  </span>
                 </li>
               ))}
             </ul>
             <Pagination page={paged.page} size={PAGE_SIZE} total={paged.total} onPage={(p) => setParam("page", String(p), "1")} />
           </>
         )}
-      </Card>
+      </div>
       <UploadDialog open={open} onOpenChange={setOpen} />
       <RenameDialog doc={toRename} onClose={() => setToRename(null)} />
+      <ConfirmDialog
+        open={!!toDisable}
+        onOpenChange={(o) => !o && setToDisable(null)}
+        title={toDisable ? t("documents.disableTitle", { name: toDisable.name }) : ""}
+        description={t("documents.disableDesc")}
+        confirmLabel={t("documents.disable")}
+        onConfirm={async () => {
+          if (toDisable) await toggle.mutateAsync({ id: toDisable.id, enabled: false }).catch(() => undefined);
+        }}
+      />
       <ConfirmDialog
         open={!!toDelete}
         onOpenChange={(o) => !o && setToDelete(null)}

@@ -15,7 +15,7 @@ from app.services.config_service import NotConfigured
 from app.services.jobs import Next, StepCtx, StepSkipped, register
 from app.steps import rules
 from app.steps.common import crop_png, k_page, k_source, render_page_png, single_page_pdf
-from app.steps.docling_engine import analyze_page
+from app.steps.parser import analyze_page, parser_available
 
 
 def _page(ctx: StepCtx):
@@ -35,7 +35,10 @@ def docling_step(ctx: StepCtx) -> list[Next]:
     pdf = c.blob.get(k_source(p.doc_id))
     png, size = render_page_png(pdf, n, ctx.options.docling.images_scale)
     c.blob.put(k_page(p.doc_id, n, "image.png"), png, "image/png")
-    a = analyze_page(pdf, n, ctx.options.docling)
+    parser = c.settings.parser_type
+    if not parser_available(parser):
+        ctx.emit("parser.unavailable", "warn", parser=parser)
+    a = analyze_page(pdf, n, ctx.options.docling, parser=parser)
     c.blob.put(k_page(p.doc_id, n, "docling.md"), a.markdown.encode(), "text/markdown")
     c.blob.put(
         k_page(p.doc_id, n, "docling.json"),

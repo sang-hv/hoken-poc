@@ -9,6 +9,7 @@ from typing import Any
 
 from app.domain.models import Page
 from app.domain.options import ChunkOptions, RoutingOptions, StitchOptions
+from app.steps.parser import PARSER_ENGINES
 
 
 # ================================================================== định tuyến
@@ -20,7 +21,7 @@ def decide_route(page: Page, opts: RoutingOptions) -> tuple[str, list[str]]:
         return "easy", ["override_skip_cu"]
     s, f = page.scores, page.features
     reasons: list[str] = []
-    if page.engine != "docling":
+    if page.engine not in PARSER_ENGINES:  # fallback pdfium: không có điểm parser
         reasons.append("no_docling")
     else:
         if s.low_score is None or s.low_score < opts.min_low_score:
@@ -534,6 +535,30 @@ def element_status(flags: list[dict], current: str = "") -> str:
     if current in DONE_STATUSES:
         return current
     return "weak" if flags else "ok"
+
+
+# ------------------------------------------------------------------ kết quả nhận diện (docs/STATUS.md §C)
+# Mã điểm yếu nghĩa là "nội dung chưa được đọc ra" → 未認識; mọi mã khác → 要確認.
+UNREAD_CODES = frozenset({"missing_text", "blank_page", "picture_no_desc"})
+BUCKETS = ("good", "fixed", "weak", "unread")  # fixed = người / AI theo yêu cầu đã sửa hoặc xác nhận
+
+
+def flags_bucket(flags: list[dict]) -> str:
+    """Nhóm theo danh sách điểm yếu (bỏ qua trạng thái người xử lý): unread > weak > good."""
+    codes = {f.get("code") for f in flags}
+    if codes & UNREAD_CODES:
+        return "unread"
+    return "weak" if codes else "good"
+
+
+def element_bucket(el: dict) -> str | None:
+    """Nhóm hiện tại của phần tử: fixed nếu người đã xử lý (fixed / accepted), không thì theo điểm yếu.
+    Header / footer / số trang không tính → None."""
+    if el.get("label") in HEADER_FOOTER:
+        return None
+    if el.get("status") in DONE_STATUSES:
+        return "fixed"
+    return flags_bucket(el.get("weak") or [])
 
 
 def open_flags(el: dict) -> list[dict]:

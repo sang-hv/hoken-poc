@@ -1,8 +1,9 @@
 """Danh mục adapter.
 
-- Lớp 1 (hạ tầng lõi: DB, blob, queue, secret) chọn theo biến môi trường → `make_*`.
-- Lớp 2 (dịch vụ AI & search) Admin chọn trên UI → `CATALOG`. Mỗi adapter khai báo các trường cấu hình;
-  UI sinh form từ đó. Trường kind="secret" được lưu vào SecretStore, DB chỉ giữ cờ "đã đặt".
+- Lớp 1 (hạ tầng lõi: DB, blob, queue) chọn theo biến môi trường → `make_*`.
+- Lớp 2 (dịch vụ AI & search) cũng chọn theo biến môi trường → `CATALOG`. Mỗi adapter khai báo các trường;
+  biến môi trường là `<COMPONENT>_TYPE` + `<COMPONENT>_<FIELD>` (xem `ConfigService`). Trường kind="secret"
+  không bao giờ trả ra API; prod lấy từ Key Vault / Secrets Manager qua tham chiếu secret của nền tảng.
 """
 
 from __future__ import annotations
@@ -262,19 +263,3 @@ def make_blob(s: BootstrapSettings):
 
         return S3Blob(s.s3_bucket, s.aws_region)
     raise ValueError(f"BLOB_TYPE không hỗ trợ: {s.blob_type}")
-
-
-def make_secrets(s: BootstrapSettings, store):
-    if s.secret_backend == "local":
-        from app.adapters.local.secret_store import LocalSecretStore
-
-        return LocalSecretStore(store, s.secret_master_key)
-    if s.secret_backend == "azure_keyvault":
-        from app.adapters.azure.keyvault import KeyVaultSecrets
-
-        return KeyVaultSecrets(s.key_vault_url)
-    if s.secret_backend == "aws_secrets":
-        from app.adapters.aws.secrets_manager import AwsSecrets
-
-        return AwsSecrets(s.aws_secrets_prefix, s.aws_region)
-    raise ValueError(f"SECRET_BACKEND không hỗ trợ: {s.secret_backend}")

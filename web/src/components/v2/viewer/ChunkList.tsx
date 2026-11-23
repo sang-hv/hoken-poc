@@ -3,17 +3,16 @@
  *  - Danh sách ảo: dòng cao cố định, chỉ vẽ các dòng đang thấy (+ dư vài dòng), tải theo khối 100 dòng khi cuộn tới.
  *  - Nhảy tới một chunk bất kỳ (`scrollToIndex`) mà không cần tải các khối ở giữa. */
 import { useQueries, useQuery } from "@tanstack/react-query";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, Check } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ConfidenceBadge } from "@/components/status";
-import { Badge, Skeleton } from "@/components/ui";
+import { Skeleton } from "@/components/ui";
 import { api } from "@/lib/api";
 import type { ChunkListPage, ChunkSummary } from "@/lib/v2types";
 import { cn } from "@/lib/utils";
 
-export const ROW = 84; // px — mọi dòng cao bằng nhau (danh sách ảo)
-const BLOCK = 100;
+export const ROW = 76; // px — mọi dòng cao bằng nhau (danh sách ảo)
+export const BLOCK = 100;
 const OVERSCAN = 6;
 
 export type ChunkFilter = "all" | "issues";
@@ -32,7 +31,7 @@ export const ck = {
   one: (doc: string, id: string) => ["chunk", doc, id] as const,
 };
 
-function listUrl(doc: string, p: ChunkListParams, offset: number, limit: number, focus = "") {
+export function listUrl(doc: string, p: ChunkListParams, offset: number, limit: number, focus = "") {
   const s = new URLSearchParams({ offset: String(offset), limit: String(limit), filter: p.filter });
   if (p.q) s.set("q", p.q);
   if (p.page) s.set("page", String(p.page));
@@ -153,6 +152,17 @@ export function ChunkList({
   );
 }
 
+/** Màu chữ cho độ tin cậy: chỉ tô khi thấp — số bình thường để màu trung tính. */
+export function confidenceClass(v: number) {
+  return v < 0.5 ? "text-danger" : v < 0.7 ? "text-warning" : "text-muted-foreground";
+}
+
+/** "p.3" hoặc "p.3–5" */
+export function usePageLabel() {
+  const { t } = useTranslation();
+  return ([a, b]: [number, number]) => (a === b ? t("viewer.page.short", { page: a }) : t("viewer.chunks.pages", { from: a, to: b }));
+}
+
 function Row({
   c,
   active,
@@ -167,7 +177,7 @@ function Row({
   weak: boolean;
 }) {
   const { t } = useTranslation();
-  const [a, b] = range;
+  const pages = usePageLabel();
   return (
     <button
       type="button"
@@ -175,30 +185,37 @@ function Row({
       aria-current={active}
       data-chunk={c.id}
       className={cn(
-        "flex h-full w-full cursor-pointer flex-col justify-center gap-1 px-3 text-left transition hover:bg-accent/60",
-        active && "bg-primary-soft/70",
+        "relative flex h-full w-full cursor-pointer flex-col justify-center gap-0.5 px-4 text-left transition-colors hover:bg-accent/60",
+        active && "bg-accent before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-primary",
       )}
     >
-      <span className="flex items-center gap-1.5">
-        <span className="font-mono text-[11px] text-muted-foreground">#{c.seq}</span>
-        <Badge tone="primary" className="font-mono">
-          {c.item_code || "—"}
-        </Badge>
-        <ConfidenceBadge value={c.confidence} />
-        {weak && <AlertTriangle className="size-3.5 shrink-0 text-warning" aria-label={t("viewer.chunkTab.weak")} />}
-        {c.violations.length > 0 && <Badge tone="warning">{t("viewer.chunkTab.rules", { n: c.violations.length })}</Badge>}
-        <span className="ml-auto shrink-0 text-[11px] tabular-nums text-muted-foreground">
-          {t("viewer.chunks.pages", { from: a, to: b })}
-        </span>
-      </span>
-      <span className="truncate text-sm font-medium">{c.title || c.preview}</span>
-      <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
-        {b > a && (
-          <span className="shrink-0 rounded bg-violet-soft px-1.5 py-px text-[10px] font-medium text-violet">
-            {t("viewer.chunkTab.span", { n: b - a + 1 })}
+      <span className="flex items-baseline gap-2 text-xs">
+        <span className="tabular-nums text-muted-foreground">#{c.seq}</span>
+        {c.item_code && <span className="font-mono font-semibold">{c.item_code}</span>}
+        <span className="flex-1" />
+        {weak && (
+          <span title={t("viewer.chunkTab.weak")} className="self-center">
+            <AlertTriangle className="size-3.5 shrink-0 text-warning" aria-label={t("viewer.chunkTab.weak")} />
           </span>
         )}
-        <span className="truncate">{c.title ? c.preview : ""}</span>
+        <span className="shrink-0 tabular-nums text-muted-foreground">{pages(range)}</span>
+      </span>
+      <span className={cn("truncate text-sm", active && "font-medium", !c.title && "text-muted-foreground")}>
+        {c.title || t("viewer.chunks.untitled")}
+      </span>
+      <span className="flex min-w-0 items-center gap-2 text-xs">
+        {c.status !== "draft" && (
+          <Check className="size-3.5 shrink-0 text-success" aria-label={t(`viewer.chunkTab.status.${c.status}`)} />
+        )}
+        <span className={cn("shrink-0 tabular-nums", confidenceClass(c.confidence))}>{Math.round(c.confidence * 100)}%</span>
+        {c.violations.length > 0 && (
+          <span className="shrink-0 text-warning">
+            {c.violations.length === 1
+              ? t(`violations.${c.violations[0]}`, { defaultValue: c.violations[0] })
+              : t("viewer.chunkTab.rules", { count: c.violations.length })}
+          </span>
+        )}
+        <span className="truncate text-muted-foreground">{c.preview}</span>
       </span>
     </button>
   );
