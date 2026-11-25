@@ -3,6 +3,9 @@
 __pycache__/
 .venv/
 .venv-parser/
+.venv-docling/
+.venv-paddleocr/
+data/ocr/
 out/
 report/
 retrieval_report.csv

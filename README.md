@@ -33,3 +33,15 @@ cd web && npm ci && npm run dev               # UI :5173 (proxy /api → :8000)
   worker parser bằng venv đó (dịch vụ AI thật theo `.env`; bỏ `MOCK_AI=0` để dùng mock).
 - Worker không có thư viện parser thì trích bằng lớp text pdfium, live log cảnh báo `parser.unavailable` và trang luôn
   được định tuyến sang 精密解析 (lý do `no_docling`).
+
+### So sánh Docling ↔ PaddleOCR
+
+```bash
+scripts/dev/compare_parsers.sh --pdf data/raw/<file>.pdf --pages 1-10      # trang page_001 … page_010
+scripts/dev/compare_parsers.sh --manifest data/gt/manifest.csv             # CSV name,pdf,page (nhiều PDF)
+```
+
+Lần đầu tạo `.venv-docling` và `.venv-paddleocr` (mỗi engine một venv, tải model). Mỗi trang ghi Markdown vào
+`data/ocr/<engine>/` và số đo vào `data/report/parser_<engine>.csv`: thời gian, điểm parser, định tuyến dễ / khó (cùng
+luật với pipeline), số phần tử ⚠ / AI đọc lại. Có ground truth `data/gt/<tên>.txt` thì chạy thêm `eval/eval_cer.py`
+(CER + lỗi số 点). Bảng gộp in ra cuối và lưu ở `data/report/compare.csv`.
