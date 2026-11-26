@@ -4,7 +4,6 @@ __pycache__/
 .venv/
 .venv-parser/
 .venv-docling/
-.venv-paddleocr/
 data/ocr/
 out/
 report/
@@ -13,3 +12,4 @@ node_modules/
 web/dist/
 *.tsbuildinfo
 *.egg-info/
+doc_examples/

@@ -44,7 +44,7 @@ flowchart LR
 stateDiagram-v2
   [*] --> queued: upload
   queued --> docling: job docling (mỗi trang)
-  docling --> routed: điểm parser (Docling / PaddleOCR) + đặc trưng bảng/hình
+  docling --> routed: điểm Docling + đặc trưng bảng/hình
   routed --> cu: trang khó
   routed --> ready: trang dễ
   cu --> ready: CU + vision (hoặc bỏ qua nếu chưa cấu hình)
@@ -60,7 +60,7 @@ Sau khi **mọi trang approved** → `chunk` (cắt thô theo mã mục → LLM 
 > `auto_review = true`) pipeline tự chạy hết: `stitch` → `auto_review` (tự đọc lại / gắn ⚠, tự duyệt) → `chunk` →
 > `index`; người dùng chỉ sửa hoặc bỏ qua chỗ có ⚠. Xem `docs/overview/01-cau-truc-he-thong.md` mục 4.
 
-Tiêu chí **trang dễ** (điểm parser: Docling `conv_res.confidence.pages[n]`, PaddleOCR = điểm OCR trung bình / phân vị 5% + điểm bố cục; grade: <0.5 poor, <0.8 fair, <0.9 good, ≥0.9 excellent):
+Tiêu chí **trang dễ** (điểm Docling `conv_res.confidence.pages[n]`; grade: <0.5 poor, <0.8 fair, <0.9 good, ≥0.9 excellent):
 `low_score ≥ 0.8` · `parse_score ≥ 0.8` · không có `ocr_score` · không bảng gộp ô · không bảng chạm mép trên/dưới (tràn trang) ·
 không hình > 5% trang (sau khi bỏ logo/con dấu/chữ ký). Ngưỡng nằm trong code (`RoutingOptions`).
 
@@ -97,9 +97,10 @@ Phiên: cookie JWT HttpOnly SameSite=Lax; request ghi bắt buộc header `X-Req
 
 | Mô hình | Cách chạy |
 |---|---|
-| Dev / một VM | `docker compose up -d --build` — postgres (pgvector + pg_bigm), api, worker-light, worker-ai ×2, worker-parser (image theo `PARSER_TYPE`), web (nginx) |
+| Dev / một VM | `docker compose up -d --build` — postgres (pgvector + pg_bigm), api, worker-light, worker-ai ×2, worker-parser (image Docling), web (nginx) |
 | Azure | Container Apps: `web`, `api`. Container Apps Jobs (event-driven, KEDA `azure-queue` scaler) chạy `python -m app.main job --queues <q>` cho từng hàng đợi. Cosmos DB, Blob, Storage Queue, AI Search, Key Vault, Managed Identity |
 | AWS | ECS Fargate: `web`, `api`; worker là ECS service scale theo độ dài SQS (hoặc RunTask chạy `job`). DynamoDB, S3, SQS, OpenSearch, Secrets Manager, Bedrock, IAM task role. CU vẫn gọi Azure |
 
-Image: `docker/app.Dockerfile` (target `base` cho api/worker; target `docling` / `paddleocr` cho worker parser, model tải sẵn lúc build),
+Image: `docker/app.Dockerfile` (target `base` cho api/worker; target `docling` cho worker parser, model tải sẵn lúc build —
+gồm cả model RapidOCR PP-OCRv6 dùng cho OCR tiếng Nhật),
 `web/Dockerfile` (nginx, tắt buffer cho SSE), `docker/postgres/Dockerfile`.

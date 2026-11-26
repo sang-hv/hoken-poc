@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-So sánh parser 標準解析 (Docling ↔ PaddleOCR) trên cùng các trang PDF.
+Benchmark parser 標準解析 (Docling + RapidOCR tiếng Nhật) trên các trang PDF chọn sẵn.
 
-Bước 1 — `run`: chạy MỘT engine (bằng venv có thư viện engine đó), mỗi trang ghi:
+Bước 1 — `run`: chạy parser (bằng venv có Docling), mỗi trang ghi:
     data/ocr/<engine>/<tên>.md              Markdown của parser → đầu vào cho eval_cer.py
     data/report/parser_<engine>.csv         thời gian, điểm parser, định tuyến dễ/khó + lý do, số phần tử ⚠
 Bước 2 — `eval_cer.py data`: CER + lỗi số 点 so với data/gt/<tên>.txt (nếu đã có ground truth).
-Bước 3 — `report`: gộp hai bước trên thành bảng so sánh theo engine (chỉ cần thư viện chuẩn).
+Bước 3 — `report`: gộp hai bước trên thành bảng tổng hợp (chỉ cần thư viện chuẩn).
 
 Chọn trang:
     --pdf data/raw/x.pdf --pages 1,3,10-12  → tên trang page_001, page_003, ... (số trang trong PDF)
@@ -14,9 +14,8 @@ Chọn trang:
                                                `name` trùng tên file ground truth (data/gt/<name>.txt),
                                                `pdf` tính từ thư mục chứa manifest (hoặc từ thư mục hiện tại)
 
-Chạy (thường gọi qua scripts/dev/compare_parsers.sh, script đó tạo sẵn venv từng engine):
-    .venv-docling/bin/python   eval/compare_parsers.py run --engine docling   --pdf data/raw/x.pdf --pages 1-10
-    .venv-paddleocr/bin/python eval/compare_parsers.py run --engine paddleocr --pdf data/raw/x.pdf --pages 1-10
+Chạy (thường gọi qua scripts/dev/compare_parsers.sh, script đó tạo sẵn .venv-docling):
+    .venv-docling/bin/python eval/compare_parsers.py run --pdf data/raw/x.pdf --pages 1-10
     python3 eval/eval_cer.py data
     python3 eval/compare_parsers.py report data
 
@@ -34,7 +33,7 @@ import time
 from collections import Counter
 from pathlib import Path
 
-ENGINES = ("docling", "paddleocr")
+ENGINES = ("docling",)
 
 RUN_FIELDS = [
     "name", "pdf", "page", "engine", "seconds",
@@ -117,40 +116,51 @@ def _fmt(v: float | None) -> str:
     return "" if v is None else f"{v:.3f}"
 
 
-def run_engine(engine: str, items, data_dir: Path, allow_fallback: bool = False, analyze=None) -> list[dict]:
+def run_engine(
+    engine: str, items, data_dir: Path, allow_fallback: bool = False, analyze=None, resume: bool = False
+) -> list[dict]:
+    """Chạy từng trang trên PDF một trang (cắt bằng pdfium) — engine không phải nạp lại cả file lớn mỗi trang.
+    CSV ghi dần từng dòng; `resume` bỏ qua trang đã có trong CSV (chạy tiếp sau khi bị ngắt)."""
     from app.domain.options import DoclingOptions, QualityOptions, RoutingOptions
+    from app.steps.common import single_page_pdf
     from app.steps.parser import analyze_page, parser_available
 
-    if not allow_fallback and not parser_available(engine):
-        raise SystemExit(
-            f"Venv này chưa có thư viện {engine}. Tạo bằng: PARSER_TYPE={engine} PARSER_VENV=.venv-{engine} "
-            "scripts/dev/setup_parser.sh"
-        )
+    if not allow_fallback and not parser_available():
+        raise SystemExit("Venv này chưa có Docling. Tạo bằng: PARSER_VENV=.venv-docling scripts/dev/setup_parser.sh")
     analyze = analyze or analyze_page
     opts, routing, quality = DoclingOptions(), RoutingOptions(), QualityOptions()
     out_dir = data_dir / "ocr" / engine
     out_dir.mkdir(parents=True, exist_ok=True)
-    pdf_cache: dict[Path, bytes] = {}
-    rows = []
-    for i, (name, pdf, page) in enumerate(items, 1):
-        data = pdf_cache.setdefault(pdf, pdf.read_bytes())
-        t0 = time.perf_counter()
-        a = analyze(data, page, opts, parser=engine)
-        dt = time.perf_counter() - t0
-        if a.engine != engine and not allow_fallback:
-            raise SystemExit(f"{name}: engine trả về '{a.engine}' thay vì '{engine}' — kiểm tra venv")
-        (out_dir / f"{name}.md").write_text(a.markdown, encoding="utf-8")
-        row = page_row(name, pdf, page, a, dt, routing, quality)
-        rows.append(row)
-        print(f"[{engine}] {i}/{len(items)} {name}  {dt:6.1f}s  {row['route']:<4} {row['route_reasons']}", flush=True)
-
     report = data_dir / "report"
     report.mkdir(parents=True, exist_ok=True)
-    with open(report / f"parser_{engine}.csv", "w", newline="", encoding="utf-8-sig") as f:
+    csv_path = report / f"parser_{engine}.csv"
+    rows = _read_csv(csv_path) if resume else []
+    done = {r["name"] for r in rows}
+    todo = [it for it in items if it[0] not in done]
+    if done:
+        print(f"[{engine}] tiếp tục: {len(done)} trang đã có, còn {len(todo)}", flush=True)
+
+    pdf_cache: dict[Path, bytes] = {}
+    with open(csv_path, "a" if rows else "w", newline="", encoding="utf-8" if rows else "utf-8-sig") as f:
         w = csv.DictWriter(f, fieldnames=RUN_FIELDS)
-        w.writeheader()
-        w.writerows(rows)
-    print(f"→ {out_dir}/  ·  {report / f'parser_{engine}.csv'}")
+        if not rows:
+            w.writeheader()
+        for i, (name, pdf, page) in enumerate(todo, 1):
+            data = pdf_cache.setdefault(pdf, pdf.read_bytes())
+            one = single_page_pdf(data, page)
+            t0 = time.perf_counter()
+            a = analyze(one, 1, opts)
+            dt = time.perf_counter() - t0
+            if a.engine != engine and not allow_fallback:
+                raise SystemExit(f"{name}: engine trả về '{a.engine}' thay vì '{engine}' — kiểm tra venv")
+            (out_dir / f"{name}.md").write_text(a.markdown, encoding="utf-8")
+            row = page_row(name, pdf, page, a, dt, routing, quality)
+            w.writerow(row)
+            f.flush()
+            rows.append(row)
+            route = f"{row['route']:<4} {row['route_reasons']}"
+            print(f"[{engine}] {i}/{len(todo)} {name}  {dt:6.1f}s  {route}", flush=True)
+    print(f"→ {out_dir}/  ·  {csv_path}")
     return rows
 
 
@@ -239,21 +249,22 @@ def print_report(data_dir: Path) -> int:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
-    r = sub.add_parser("run", help="chạy một engine trên các trang đã chọn")
-    r.add_argument("--engine", required=True, choices=ENGINES)
+    r = sub.add_parser("run", help="chạy parser trên các trang đã chọn")
+    r.add_argument("--engine", default="docling", choices=ENGINES)
     src = r.add_mutually_exclusive_group(required=True)
     src.add_argument("--pdf")
     src.add_argument("--manifest")
     r.add_argument("--pages", default="all", help="vd 1,3,10-12 (mặc định all); chỉ dùng với --pdf")
     r.add_argument("--data", default="data")
     r.add_argument("--allow-fallback", action="store_true", help="cho chạy khi thiếu thư viện (chỉ để thử)")
+    r.add_argument("--resume", action="store_true", help="bỏ qua trang đã có trong parser_<engine>.csv")
     s = sub.add_parser("report", help="gộp kết quả thành bảng so sánh")
     s.add_argument("data_dir", nargs="?", default="data")
     args = ap.parse_args(argv)
 
     if args.cmd == "report":
         return print_report(Path(args.data_dir))
-    run_engine(args.engine, items_from_args(args), Path(args.data), args.allow_fallback)
+    run_engine(args.engine, items_from_args(args), Path(args.data), args.allow_fallback, resume=args.resume)
     return 0
 
 

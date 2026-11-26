@@ -43,7 +43,7 @@ Search ở lớp 2 vì dựng lại được từ chunk đã duyệt.
 4. Thêm test (REST giả trong `tests/test_rest_adapters.py` hoặc hợp đồng).
 
 ## Mô hình chạy job
-- Ba hàng đợi: `docling` (parser nặng — Docling hoặc PaddleOCR theo `PARSER_TYPE`, image riêng; tên hàng đợi giữ nguyên), `ai` (gọi CU/LLM/embedding), `light` (định tuyến, nối trang).
+- Ba hàng đợi: `docling` (parser nặng — Docling + RapidOCR, image riêng), `ai` (gọi CU/LLM/embedding), `light` (định tuyến, nối trang).
 - `python -m app.main worker --queues X` — chạy liên tục (compose / VM / ECS service).
 - `python -m app.main job --queues X --idle 30` — xử lý đến khi rỗng rồi thoát (Azure Container Apps Job với KEDA scaler theo độ dài queue; ECS RunTask).
 - Job idempotent theo khoá `docId:step:page`; fan-in (đủ trang mới nối) dùng `enqueue(force=True)` + `create` có điều kiện.

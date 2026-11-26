@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Chạy khu A ngoài Docker (dev): mock AI + API + worker + Vite.
-# Parser thật (PARSER_TYPE trong .env): chạy scripts/dev/setup_parser.sh một lần → worker parser dùng .venv-parser.
+# Parser thật (Docling): chạy scripts/dev/setup_parser.sh một lần → worker parser dùng .venv-parser.
 #   ENV_FILE=path/to/env scripts/demo/up.sh          # mặc định .env
 #   SEED=1 scripts/demo/up.sh                         # seed dữ liệu giả (lần đầu)
 #   SEED=reset scripts/demo/up.sh                     # xoá tài liệu cũ rồi seed lại

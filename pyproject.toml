@@ -22,9 +22,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Parser (標準解析) nặng (torch / paddle + model). Chỉ cài trong image worker parser hoặc .venv-parser.
-docling = ["docling>=2.31", "easyocr>=1.7"]  # Docling mới không còn kèm EasyOCR (OCR tiếng Nhật)
-paddleocr = ["paddlepaddle>=3.0", "paddleocr[doc-parser]>=3.0"]
+# Parser (標準解析) nặng (torch + model). Chỉ cài trong image worker parser hoặc .venv-parser.
+# OCR mặc định của Docling: RapidOCR PP-OCRv6 tiếng Nhật (extra `rapidocr` kèm onnxruntime; cần ≥2.152 cho `iso:ja`).
+# EasyOCR giữ lại cho DoclingOptions.ocr_engine = "easyocr" (để so sánh).
+docling = ["docling[rapidocr]>=2.152", "easyocr>=1.7"]
 azure = [
   "azure-identity>=1.17",
   "azure-cosmos>=4.7",

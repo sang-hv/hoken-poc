@@ -26,7 +26,7 @@ Skill của repo (đọc trước khi sửa): `.claude/skills/architecture`, `.c
 ## Cấu hình — 4 lớp
 Lớp 1–3 đặt bằng **biến môi trường, cùng một cách cho dev và prod**: dev ghi trong `.env`, prod do IaC đặt
 (`.env.example` liệt kê đủ). Không hiện trên Admin UI; đổi xong khởi động lại API + worker.
-1. **Hạ tầng lõi** (DB, blob, queue, JWT, parser): `DB_TYPE`, `BLOB_TYPE`, `QUEUE_TYPE`, `PARSER_TYPE`...
+1. **Hạ tầng lõi** (DB, blob, queue, JWT): `DB_TYPE`, `BLOB_TYPE`, `QUEUE_TYPE`...
 2. **Dịch vụ AI & tích hợp** (LLM, embedding, CU, search, SSO Google/Entra): `<COMPONENT>_TYPE` = local / azure / aws
    + `<COMPONENT>_<FIELD>` (vd `LLM_ENDPOINT`), SSO `AUTH_<GOOGLE|ENTRA>_*`. Prod không nhận Local.
 3. **Secret** (mật khẩu DB, API key, client secret, JWT): prod nằm ở Key Vault / Secrets Manager, nền tảng đưa vào env
@@ -45,7 +45,7 @@ Lớp 1–3 đặt bằng **biến môi trường, cùng một cách cho dev và
 | CU | Azure | Azure | Azure |
 
 ## Pipeline khu A
-Upload → Parser 標準解析 (`PARSER_TYPE` = docling | paddleocr; điểm confidence từng trang) → định tuyến → [CU + vision cho trang khó] → nối trang →
+Upload → Parser 標準解析 (Docling, OCR bằng RapidOCR tiếng Nhật; điểm confidence từng trang) → định tuyến → [CU + vision cho trang khó] → nối trang →
 kiểm tra chất lượng (tự đọc lại / gắn ⚠) → cắt thô theo mã mục → LLM chunk ↔ kiểm tra luật (≤ 20 vòng) → confidence →
 embedding → index. Người dùng xử lý ⚠ song song (sửa / bỏ qua), không chặn luồng.
 

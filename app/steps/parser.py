@@ -1,10 +1,9 @@
-"""Parser (標準解析) — chọn engine theo `PARSER_TYPE` (docling | paddleocr).
+"""Parser (標準解析): Docling (OCR vùng ảnh / trang scan bằng RapidOCR tiếng Nhật — `DoclingOptions.ocr_engine`).
 
-Mọi engine trả cùng một `PageAnalysis`: Markdown của trang, điểm (PageScores, thang 0..1 như Docling), đặc trưng
-bảng / hình (PageFeatures) và danh sách phần tử có bbox + confidence (+ `text`). Nhờ vậy định tuyến, tab 検査,
-nối trang và chunk không cần biết engine nào đã chạy.
+Trả `PageAnalysis`: Markdown của trang, điểm (PageScores, thang 0..1 của Docling), đặc trưng bảng / hình
+(PageFeatures) và danh sách phần tử có bbox + confidence (+ `text`) cho định tuyến, tab 検査, nối trang và chunk.
 
-Thư viện của engine chỉ có trong image worker parser hoặc `.venv-parser`. Thiếu thư viện thì dùng lớp text pdfium
+Thư viện Docling chỉ có trong image worker parser hoặc `.venv-parser`. Thiếu thư viện thì dùng lớp text pdfium
 (engine="pdfium") — trang đó bị định tuyến sang 精密解析 với lý do `no_docling` và có cảnh báo `parser.unavailable`.
 """
 
@@ -16,8 +15,8 @@ from app.domain.models import PageFeatures, PageScores
 from app.domain.options import DoclingOptions
 from app.steps.common import page_text_pdfium
 
-# engine của một parser thật (khác fallback "pdfium")
-PARSER_ENGINES = ("docling", "paddleocr")
+# engine của parser thật (khác fallback "pdfium")
+PARSER_ENGINES = ("docling",)
 
 
 @dataclass
@@ -37,17 +36,12 @@ def grade(score: float | None) -> str:
     return "poor" if score < 0.5 else "fair" if score < 0.8 else "good" if score < 0.9 else "excellent"
 
 
-def parser_available(kind: str) -> bool:
+def parser_available() -> bool:
     try:
-        if kind == "docling":
-            import docling  # noqa: F401
-        elif kind == "paddleocr":
-            import paddleocr  # noqa: F401
-        else:
-            return False
-        return True
+        import docling  # noqa: F401
     except ImportError:
         return False
+    return True
 
 
 def analyze_with_pdfium(pdf: bytes, page: int) -> PageAnalysis:
@@ -60,12 +54,8 @@ def analyze_with_pdfium(pdf: bytes, page: int) -> PageAnalysis:
     return PageAnalysis("pdfium", md.strip() + "\n", PageScores(), feats, [])
 
 
-def analyze_page(pdf: bytes, page: int, opts: DoclingOptions, parser: str = "docling") -> PageAnalysis:
-    if parser == "paddleocr" and parser_available("paddleocr"):
-        from app.steps.paddle_engine import analyze_with_paddle
-
-        return analyze_with_paddle(pdf, page, opts)
-    if parser == "docling" and parser_available("docling"):
+def analyze_page(pdf: bytes, page: int, opts: DoclingOptions) -> PageAnalysis:
+    if parser_available():
         from app.steps.docling_engine import analyze_with_docling
 
         return analyze_with_docling(pdf, page, opts)

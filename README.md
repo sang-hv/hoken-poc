@@ -1,6 +1,6 @@
 # 保険AI Bot — PoC
 
-Khu A: hệ thống nạp tài liệu (upload → parser (Docling / PaddleOCR) → định tuyến → Content Understanding → nối trang → **review OCR** →
+Khu A: hệ thống nạp tài liệu (upload → parser (Docling) → định tuyến → Content Understanding → nối trang → **review OCR** →
 agentic chunking → **review chunk** → embedding → index), có live log, phân quyền, giao diện tiếng Anh / tiếng Nhật,
 chạy được trên một VM, Azure hoặc AWS qua adapter.
 
@@ -26,22 +26,22 @@ uv venv .venv && uv pip install -p .venv -e ".[dev,azure,aws]"
 cd web && npm ci && npm run dev               # UI :5173 (proxy /api → :8000)
 ```
 
-**Parser (標準解析)** chọn bằng `PARSER_TYPE` trong `.env`: `docling` hoặc `paddleocr` (PP-StructureV3). Cả hai trả cùng
-định dạng (Markdown, điểm, bảng / hình, phần tử có confidence) nên các bước sau không đổi.
-- Docker: `docker compose up -d --build` build image `worker-parser` đúng theo `PARSER_TYPE` (model tải sẵn lúc build).
+**Parser (標準解析)** là Docling; OCR vùng ảnh / trang scan bằng RapidOCR PP-OCRv6 tiếng Nhật (`DoclingOptions.ocr_engine`,
+`easyocr` vẫn chọn được để so sánh). Kết quả: Markdown, điểm, bảng / hình, phần tử có confidence.
+- Docker: `docker compose up -d --build` build image `worker-parser` (model Docling + RapidOCR tải sẵn lúc build).
 - Ngoài Docker: `scripts/dev/setup_parser.sh` tạo `.venv-parser` (Python 3.12) rồi `MOCK_AI=0 scripts/demo/up.sh` chạy
   worker parser bằng venv đó (dịch vụ AI thật theo `.env`; bỏ `MOCK_AI=0` để dùng mock).
 - Worker không có thư viện parser thì trích bằng lớp text pdfium, live log cảnh báo `parser.unavailable` và trang luôn
   được định tuyến sang 精密解析 (lý do `no_docling`).
 
-### So sánh Docling ↔ PaddleOCR
+### Benchmark parser
 
 ```bash
 scripts/dev/compare_parsers.sh --pdf data/raw/<file>.pdf --pages 1-10      # trang page_001 … page_010
 scripts/dev/compare_parsers.sh --manifest data/gt/manifest.csv             # CSV name,pdf,page (nhiều PDF)
 ```
 
-Lần đầu tạo `.venv-docling` và `.venv-paddleocr` (mỗi engine một venv, tải model). Mỗi trang ghi Markdown vào
-`data/ocr/<engine>/` và số đo vào `data/report/parser_<engine>.csv`: thời gian, điểm parser, định tuyến dễ / khó (cùng
+Lần đầu tạo `.venv-docling` (tải thư viện + model). Mỗi trang ghi Markdown vào
+`data/ocr/docling/` và số đo vào `data/report/parser_docling.csv`: thời gian, điểm parser, định tuyến dễ / khó (cùng
 luật với pipeline), số phần tử ⚠ / AI đọc lại. Có ground truth `data/gt/<tên>.txt` thì chạy thêm `eval/eval_cer.py`
 (CER + lỗi số 点). Bảng gộp in ra cuối và lưu ở `data/report/compare.csv`.

@@ -7,7 +7,7 @@ Giao diện có tiếng Nhật / tiếng Anh, nền sáng / tối. Định nghĩ
 
 | Giao diện (ja / en) | Vai trò | Công nghệ hiện tại |
 |---|---|---|
-| 標準解析 / Parser | đọc mọi trang, chấm điểm | Docling hoặc PaddleOCR (chọn bằng `PARSER_TYPE`) |
+| 標準解析 / Parser | đọc mọi trang, chấm điểm | Docling (OCR bằng RapidOCR tiếng Nhật) |
 | 精密解析 / Layout Analyzer | đọc kỹ trang khó (scan, bảng gộp ô) | Azure Content Understanding |
 | VLM | đọc lại phần tử ⚠, chuyển hình thành chữ | model ảnh + chữ của LLM |
 

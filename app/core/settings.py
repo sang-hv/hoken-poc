@@ -32,9 +32,6 @@ def _env(name: str, default: str = "") -> str:
     return os.environ.get(name, default).strip()
 
 
-PARSER_TYPES = ("docling", "paddleocr")
-
-
 @dataclass(frozen=True)
 class BootstrapSettings:
     app_env: str = "dev"  # dev | prod
@@ -67,10 +64,6 @@ class BootstrapSettings:
     jwt_secret: str = field(default="", repr=False)
     session_hours: int = 12
 
-    # Parser (標準解析) chạy trong worker hàng đợi "docling": docling | paddleocr. Thư viện tương ứng chỉ có
-    # trong image worker parser (docker/app.Dockerfile target docling / paddleocr) hoặc .venv-parser.
-    parser_type: str = "docling"
-
     @property
     def is_prod(self) -> bool:
         return self.app_env == "prod"
@@ -82,7 +75,6 @@ class BootstrapSettings:
             "db_type": self.db_type,
             "blob_type": self.blob_type,
             "queue_type": self.queue_type,
-            "parser_type": self.parser_type,
             "aws_region": self.aws_region,
             "cosmos_endpoint": self.cosmos_endpoint,
             "s3_bucket": self.s3_bucket,
@@ -97,8 +89,6 @@ class BootstrapSettings:
             problems.append("APP_ENV=prod không dùng adapter local cho blob")
         if self.is_prod and self.db_type in ("memory",):
             problems.append("APP_ENV=prod không dùng DB memory")
-        if self.parser_type not in PARSER_TYPES:
-            problems.append(f"PARSER_TYPE phải là một trong {', '.join(PARSER_TYPES)}")
         if problems:
             raise RuntimeError("Cấu hình bootstrap không hợp lệ: " + "; ".join(problems))
 
@@ -128,7 +118,6 @@ def settings_from_env() -> BootstrapSettings:
         sqs_queue_url_prefix=_env("SQS_QUEUE_URL_PREFIX"),
         jwt_secret=_env("JWT_SECRET"),
         session_hours=int(_env("SESSION_HOURS", "12") or 12),
-        parser_type=_env("PARSER_TYPE", "docling").strip().lower(),
     )
 
 

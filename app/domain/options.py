@@ -35,6 +35,10 @@ DEFAULT_CHUNK_PROMPT = (
 
 class DoclingOptions(BaseModel):
     do_ocr: bool = True
+    # OCR bên trong Docling cho vùng ảnh / trang scan. rapidocr = PP-OCRv6 tiếng Nhật (ONNX): trên sách scan F1 ký tự
+    # 98,5 % so với 84,9 % của easyocr (EasyOCR bỏ sót chữ, đọc MOO1 / 揖げる) — benchmark 25/11/2026.
+    ocr_engine: str = "rapidocr"  # rapidocr | easyocr
+    # Ngôn ngữ OCR: easyocr dùng cả danh sách; rapidocr chỉ chạy một ngôn ngữ → lấy phần tử đầu (ja).
     ocr_lang: list[str] = Field(default_factory=lambda: ["ja", "en"])
     table_mode: str = "accurate"  # accurate | fast
     images_scale: float = 2.0

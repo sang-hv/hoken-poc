@@ -35,10 +35,9 @@ def docling_step(ctx: StepCtx) -> list[Next]:
     pdf = c.blob.get(k_source(p.doc_id))
     png, size = render_page_png(pdf, n, ctx.options.docling.images_scale)
     c.blob.put(k_page(p.doc_id, n, "image.png"), png, "image/png")
-    parser = c.settings.parser_type
-    if not parser_available(parser):
-        ctx.emit("parser.unavailable", "warn", parser=parser)
-    a = analyze_page(pdf, n, ctx.options.docling, parser=parser)
+    if not parser_available():
+        ctx.emit("parser.unavailable", "warn", parser="docling")
+    a = analyze_page(pdf, n, ctx.options.docling)
     c.blob.put(k_page(p.doc_id, n, "docling.md"), a.markdown.encode(), "text/markdown")
     c.blob.put(
         k_page(p.doc_id, n, "docling.json"),

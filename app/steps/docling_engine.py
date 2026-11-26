@@ -1,6 +1,6 @@
 """Parser Docling: chạy cho một trang và rút ra markdown, điểm confidence, đặc trưng bảng/hình, toạ độ phần tử.
 
-Chọn engine ở `app/steps/parser.py` (PARSER_TYPE). Docling chỉ có trong image worker parser (nặng).
+Gọi qua `app/steps/parser.py`. Docling chỉ có trong image worker parser (nặng) hoặc `.venv-parser`.
 """
 
 from __future__ import annotations
@@ -29,17 +29,30 @@ def _grade(v) -> str:
     return getattr(v, "value", str(v or "unspecified")).lower()
 
 
+def ocr_options(engine: str, langs: tuple[str, ...]):
+    """Tuỳ chọn OCR của Docling. rapidocr: PP-OCRv6 (model small, đã có trong `docling-tools models download`), một
+    ngôn ngữ, viết dạng BCP-47 `iso:ja`; easyocr: danh sách mã EasyOCR (`ja`, `en`)."""
+    from docling.datamodel.pipeline_options import EasyOcrOptions, RapidOcrOptions
+
+    if engine == "easyocr":
+        return EasyOcrOptions(lang=list(langs))
+    if engine != "rapidocr":
+        raise ValueError(f"ocr_engine không hỗ trợ: {engine}")
+    lang = langs[0] if langs else "ja"
+    return RapidOcrOptions(lang=[lang if ":" in lang else f"iso:{lang}"], model_size="small")
+
+
 @lru_cache(maxsize=4)
-def _converter(do_ocr: bool, langs: tuple[str, ...], table_mode: str, classify: bool, scale: float):
+def _converter(do_ocr: bool, engine: str, langs: tuple[str, ...], table_mode: str, classify: bool, scale: float):
     from docling.datamodel.base_models import InputFormat
-    from docling.datamodel.pipeline_options import EasyOcrOptions, PdfPipelineOptions, TableFormerMode
+    from docling.datamodel.pipeline_options import PdfPipelineOptions, TableFormerMode
     from docling.document_converter import DocumentConverter, PdfFormatOption
 
     opts = PdfPipelineOptions()
     if os.environ.get("DOCLING_ARTIFACTS_PATH"):  # model tải sẵn lúc build image, chạy không cần mạng
         opts.artifacts_path = os.environ["DOCLING_ARTIFACTS_PATH"]
     opts.do_ocr = do_ocr
-    opts.ocr_options = EasyOcrOptions(lang=list(langs))
+    opts.ocr_options = ocr_options(engine, langs)
     opts.do_table_structure = True
     opts.table_structure_options.mode = TableFormerMode.ACCURATE if table_mode == "accurate" else TableFormerMode.FAST
     opts.do_picture_classification = classify
@@ -135,7 +148,12 @@ def analyze_with_docling(pdf: bytes, page: int, opts: DoclingOptions) -> PageAna
     from docling.datamodel.base_models import DocumentStream
 
     conv = _converter(
-        opts.do_ocr, tuple(opts.ocr_lang), opts.table_mode, opts.picture_classification, opts.images_scale
+        opts.do_ocr,
+        opts.ocr_engine,
+        tuple(opts.ocr_lang),
+        opts.table_mode,
+        opts.picture_classification,
+        opts.images_scale,
     )
     res = conv.convert(DocumentStream(name="page.pdf", stream=io.BytesIO(pdf)), page_range=(page, page))
     doc = res.document
